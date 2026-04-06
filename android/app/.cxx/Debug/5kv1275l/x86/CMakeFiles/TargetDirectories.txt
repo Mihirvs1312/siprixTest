@@ -1,0 +1,2 @@
+E:/001_MihirProjects/001_Flutter_Application/siprix-test/android/app/.cxx/Debug/5kv1275l/x86/CMakeFiles/edit_cache.dir
+E:/001_MihirProjects/001_Flutter_Application/siprix-test/android/app/.cxx/Debug/5kv1275l/x86/CMakeFiles/rebuild_cache.dir

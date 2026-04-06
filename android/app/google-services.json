@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "80031395699",
+    "project_id": "teamlocus-sip",
+    "storage_bucket": "teamlocus-sip.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:80031395699:android:532902cbacfca22b7a5f06",
+        "android_client_info": {
+          "package_name": "com.app.teamlocus_sip"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCqdzzsf47rqUAeIfLoWMzsU6V7bomiY4w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="foreground_descr">Siprix calls service</string>
+    <string name="call_incoming_channel_name">Incoming calls</string>
+    <string name="call_ongoing_channel_name">Ongoing calls</string>
+    <string name="msg_channel_name">Messages</string>
+</resources>
