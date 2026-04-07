@@ -49,9 +49,14 @@ class AppCallsModel extends CallsModel {
     }
 
     String pushHint = apsPayload?["pushHint"] ?? CallMatcher.kStubPushHint;
-    String genericHandle =  apsPayload?["callerNumber"] ?? "genericHandle";
-    String localizedCallerName = apsPayload?["callerName"] ?? "callerName";
-    bool withVideo = apsPayload?["withVideo"] ?? false;
+
+    print('apsPayload: $apsPayload');
+    // Docs/curl samples use callerId; some servers send callerNumber.
+    final dynamic handleRaw = pushPayload?["caller_number"] ?? pushPayload?["callerNumber"] ?? pushPayload?["callerId"];
+    String genericHandle = handleRaw?.toString() ?? "genericHandle";
+    final dynamic nameRaw = pushPayload?["caller_number"];
+    String localizedCallerName = nameRaw?.toString() ?? "callerName";
+    bool withVideo = pushPayload?["withVideo"] ?? false;
     int? sipCallId = null;
 
     int index = _callMatchers.indexWhere((c) => c.push_Hint == pushHint);
@@ -76,8 +81,7 @@ class AppCallsModel extends CallsModel {
     super.onIncomingSip(callId, accId, withVideo, hdrFrom, hdrTo);
 
     if(Platform.isIOS) {
-      //TODO Match push and sip calls using just received SIP INVITE and data from push (put to '_callMatchers')
-      //Get some hint from just received SIP INVITE (added by remote server) or math this SIP-call with CallKit-call
+      // Match CallKit push flow with SIP INVITE using a shared hint (PBX should set X-PushHint to match push payload).
       String pushHint = await SiprixVoipSdk().getSipHeader(callId, "X-PushHint")?? CallMatcher.kStubPushHint;
       _logs?.print('onIncomingSip callId:$callId pushHint:$pushHint');
 

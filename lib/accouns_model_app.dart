@@ -21,8 +21,16 @@ class AppAccountsModel extends AccountsModel {
 
   Future<void> _saveTokenToBackend(String extension) async {
     try {
-      final token = await FirebaseUtil.getStoredFcmToken() ??
-          await FirebaseUtil.generateFcmToken();
+      final String? token;
+      if (Platform.isIOS) {
+        token = await SiprixVoipSdk().getPushKitToken();
+      } else if (Platform.isAndroid) {
+        token = await FirebaseUtil.getStoredFcmToken() ??
+            await FirebaseUtil.generateFcmToken();
+      } else {
+        token = await FirebaseUtil.getStoredFcmToken() ??
+            await FirebaseUtil.generateFcmToken();
+      }
       if (token == null) return;
 
       final result = await SipRepository.saveToken({
@@ -53,12 +61,11 @@ class AppAccountsModel extends AccountsModel {
       acc.xheaders = {"X-Token" : token};//Put token into separate header
       //acc.xContactUriParams = {"X-Token" : token};//put token into ContactUriParams
     }
-    await super.addAccount(acc, saveChanges:saveChanges);
-
     final ext = acc.sipExtension;
-    if (ext.isNotEmpty) {
-      await _saveTokenToBackend(ext);
-    }
+      if (ext.isNotEmpty) {
+        await _saveTokenToBackend(ext);
+      }
+    await super.addAccount(acc, saveChanges:saveChanges);
   }
 
   /// Awaits each native [registerAccount] call. The base [AccountsModel.refreshRegistration]

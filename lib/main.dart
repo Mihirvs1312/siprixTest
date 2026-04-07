@@ -58,9 +58,14 @@ void main() async {
   //VoiceMailModel vmModel       = VoiceMailModel(logsModel);
 
   try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+    // iOS: use GoogleService-Info.plist (Dart options still have iOS placeholders).
+    if (Platform.isIOS) {
+      await Firebase.initializeApp();
+    } else {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    }
   } catch (_) {
     // Already initialized by google-services.json / native plugin
   }
@@ -71,8 +76,6 @@ void main() async {
   // }
 
   // FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-
-  // await FirebaseNotificationService.instance.initialize();
 
   //Run app
   runApp(
@@ -231,16 +234,16 @@ class _MyAppState extends State<MyApp> {
     //iniData.enableVUmeter = true;
     //iniData.singleCallMode = false;
     //iniData.tlsVerifyServer = false;
-    //if(Platform.isIOS) {
-    //  iniData.enableCallKit = true;
-    //  iniData.enablePushKit = true; //Enable only when added PushNotif support on server side
-    //  iniData.unregOnDestroy = false;
-    //}
-    //if(Platform.isAndroid) {
-    //  iniData.listenTelState = true;
-    //  iniData.listenVolChange = true;
+    if(Platform.isIOS) {
+     iniData.enableCallKit = true;
+     iniData.enablePushKit = true; //Enable only when added PushNotif support on server side
+     iniData.unregOnDestroy = false;
+    }
+    if(Platform.isAndroid) {
+     iniData.listenTelState = true;
+     iniData.listenVolChange = true;
     //  iniData.serviceClassName = "com.app.teamlocus_sip.MyNotifService";
-    //}
+    }
     await SiprixVoipSdk().initialize(iniData, logsModel);
 
     //Set video params (if required)
