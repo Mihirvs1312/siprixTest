@@ -10,6 +10,7 @@ import 'package:siprix_voip_sdk/cdrs_model.dart';
 import 'package:siprix_voip_sdk/siprix_voip_sdk.dart';
 
 import 'callkit_incoming_fallback.dart';
+import 'voip_ios_config.dart';
 
 /// Helper class used to keep different ids of the same call
 class CallMatcher {
@@ -147,7 +148,7 @@ class AppCallsModel extends CallsModel {
       print('onIncomingSip getSipHeader full message failed: $e');
     }
 
-    if(Platform.isIOS) {
+    if(Platform.isIOS && kIosUsePushKit) {
       // Match CallKit push flow with SIP INVITE using a shared hint (PBX should set X-PushHint to match push payload).
       
       // String pushHint = await SiprixVoipSdk().getSipHeader(callId, "X-PushHint")?? CallMatcher.kStubPushHint;

@@ -31,6 +31,7 @@ import 'home.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart';
+import 'voip_ios_config.dart';
 //const FirebaseOptions gFCMOptions = FirebaseOptions(
 //      apiKey: '...',            //Copy from `google-services.json` - `client.api_key.current_key`
 //      appId: '...',             //Copy from `google-services.json` - `client.client_info.mobilesdk_app_id`
@@ -244,7 +245,9 @@ class _MyAppState extends State<MyApp> {
      // onIncomingSip in Dart but no lock-screen CallKit / no ring unless the server sends Apple
      // VoIP push for every call. Set false to show CallKit from the INVITE itself (SIP must
      // reach the app while registered). Set true again when your PBX sends PushKit before/during ring.
-     iniData.enablePushKit = true;
+     // Use SIP-driven CallKit for reliable lock-screen answer flow.
+     // Set true only when server sends proper iOS VoIP pushes for each call.
+     iniData.enablePushKit = kIosUsePushKit;
      iniData.unregOnDestroy = false;
     }
     if(Platform.isAndroid) {
