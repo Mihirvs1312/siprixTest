@@ -19,6 +19,7 @@ import 'package:siprix_voip_sdk/subscriptions_model.dart';
 import 'package:siprix_voip_sdk/siprix_voip_sdk.dart';
 
 import 'accouns_model_app.dart';
+import 'callkit_incoming_fallback.dart';
 import 'calls_model_app.dart';
 import 'subscr_model_app.dart';
 
@@ -182,6 +183,8 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
 
+    registerIncomingSipFallbackCallKitListener();
+
     _initializeSiprix(context.read<LogsModel>());
     widget.writeRingtoneAsset();//after initialize Siprix as uses its 'homeFolder'
     _readSavedState();
@@ -236,7 +239,12 @@ class _MyAppState extends State<MyApp> {
     //iniData.tlsVerifyServer = false;
     if(Platform.isIOS) {
      iniData.enableCallKit = true;
-     iniData.enablePushKit = true; //Enable only when added PushNotif support on server side
+     // Siprix iOS: when enablePushKit is true, CallKit incoming UI is only shown from a *VoIP push*
+     // (onPushIncoming). Plain SIP INVITE does NOT call reportNewIncomingCall — so you get
+     // onIncomingSip in Dart but no lock-screen CallKit / no ring unless the server sends Apple
+     // VoIP push for every call. Set false to show CallKit from the INVITE itself (SIP must
+     // reach the app while registered). Set true again when your PBX sends PushKit before/during ring.
+     iniData.enablePushKit = true;
      iniData.unregOnDestroy = false;
     }
     if(Platform.isAndroid) {

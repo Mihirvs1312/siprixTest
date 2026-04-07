@@ -343,12 +343,12 @@ class _SwitchedCallWidgetState extends State<SwitchedCallWidget> {
   }
 
   void _acceptCall() {
-    widget.myCall.accept(widget.myCall.hasVideo)
+    context.read<AppCallsModel>().acceptFirstRingingIncoming()
       .catchError(showSnackBar);
   }
 
   void _rejectCall() {
-    widget.myCall.reject()
+    context.read<AppCallsModel>().rejectAllRingingIncoming()
       .catchError(showSnackBar);
   }
 
