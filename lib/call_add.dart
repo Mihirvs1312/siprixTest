@@ -83,7 +83,6 @@ class _CallAddPageState extends State<CallAddPage> {
         //contentPadding: const EdgeInsets.all(0),
         suffixIcon: Wrap(alignment: WrapAlignment.center, spacing: 10, children:[
             FilledButton(onPressed: _inviteAudio, child: const Icon(Icons.add_call)),
-            OutlinedButton(onPressed: _inviteVideo, child: const Icon(Icons.video_call_outlined))
         ]),
       ),
       controller: _phoneNumbCtrl,
@@ -168,7 +167,6 @@ class _CallAddPageState extends State<CallAddPage> {
     context.read<CdrsModel>().remove(index);
   }
 
-  void _inviteVideo() => _invite(true);
   void _inviteAudio() => _invite(false);
 
   void _invite(bool withVideo) {

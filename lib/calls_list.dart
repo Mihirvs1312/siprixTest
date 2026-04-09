@@ -118,7 +118,7 @@ class SwitchedCallWidget extends StatefulWidget {
 class _SwitchedCallWidgetState extends State<SwitchedCallWidget> {
   final SiprixVideoRenderer _localRenderer  = SiprixVideoRenderer();
   final SiprixVideoRenderer _remoteRenderer = SiprixVideoRenderer();
-  static const double eIconSize = 30;
+  static const double eIconSize = 36;
 
   @override
   void initState() {

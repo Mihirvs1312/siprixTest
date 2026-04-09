@@ -1,2 +1,2 @@
-const bool kIosUsePushKit = false;
+const bool kIosUsePushKit = true;
 

@@ -217,6 +217,7 @@ class _MyAppState extends State<MyApp> {
       },
       home: const HomePage(),
       title: 'Siprix VoIP app',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         visualDensity: VisualDensity.adaptivePlatformDensity,

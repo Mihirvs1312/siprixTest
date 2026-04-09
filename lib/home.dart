@@ -6,8 +6,6 @@ import 'package:siprix_voip_sdk/network_model.dart';
 import 'package:siprix_voip_sdk/logs_model.dart';
 
 import 'calls_model_app.dart';
-import 'messages.dart';
-import 'subscr_list.dart';
 import 'accounts_list.dart';
 import 'settings.dart';
 import 'calls_list.dart';
@@ -41,8 +39,8 @@ class _HomePageState extends State<HomePage> {
         appBar: AppBar(backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.4), 
           titleSpacing: 0,
           title: ListTile(
-            title:Text('Siprix VoIP SDK', style: Theme.of(context).textTheme.headlineSmall, overflow: TextOverflow.ellipsis),
-            subtitle: Text('www.siprix-voip.com', style: Theme.of(context).textTheme.bodySmall, overflow: TextOverflow.ellipsis),
+            title:Text('Teamlocus Sip', style: Theme.of(context).textTheme.headlineSmall, overflow: TextOverflow.ellipsis),
+            // subtitle: Text('www.siprix-voip.com', style: Theme.of(context).textTheme.bodySmall, overflow: TextOverflow.ellipsis),
           ),
           actions: [
             Padding(padding: const EdgeInsets.only(right: 20),
@@ -54,18 +52,12 @@ class _HomePageState extends State<HomePage> {
           children: const [
             AccountsListPage(),
             CallsListPage(),
-            SubscrListPage(),
-            MessagesListPage(),
-            LogsPage()
           ]),
         bottomSheet: _networkLostIndicator(),
         bottomNavigationBar: BottomNavigationBar(
           items: <BottomNavigationBarItem>[
             const BottomNavigationBarItem(icon: Icon(Icons.widgets), label: 'Accounts'),
                   BottomNavigationBarItem(icon: _callsTabIcon(), label: 'Calls'),
-            const BottomNavigationBarItem(icon: Icon(Icons.hub), label: 'BLF'),
-            const BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Messages'),
-            const BottomNavigationBarItem(icon: Icon(Icons.text_snippet), label: 'Logs'),
           ],
           currentIndex: _selectedPageIndex,
           type: BottomNavigationBarType.fixed,
