@@ -186,12 +186,23 @@ class _MyAppState extends State<MyApp> {
 
     registerIncomingSipFallbackCallKitListener();
 
-    _initializeSiprix(context.read<LogsModel>());
-    widget.writeRingtoneAsset();//after initialize Siprix as uses its 'homeFolder'
-    _readSavedState();
+    // Must finish Siprix init before loadFromJson/addAccount. Otherwise a VoIP/FCM
+    // wake from kill state can race: accounts register before native init completes
+    // and the incoming leg can drop when init or registration runs again.
+    _bootAfterFirstFrame();
 
     if(Platform.isAndroid)
       _listener = AppLifecycleListener(onInactive: _onAndroidAppInactive);
+  }
+
+  Future<void> _bootAfterFirstFrame() async {
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    final logs = context.read<LogsModel>();
+    await _initializeSiprix(logs);
+    if (!mounted) return;
+    widget.writeRingtoneAsset(); // uses Siprix homeFolder
+    _readSavedState();
   }
 
   @override
@@ -250,6 +261,7 @@ class _MyAppState extends State<MyApp> {
      // Set true only when server sends proper iOS VoIP pushes for each call.
      iniData.enablePushKit = kIosUsePushKit;
      iniData.unregOnDestroy = false;
+     debugPrint('[PushKit] iOS init: enablePushKit=${iniData.enablePushKit} enableCallKit=${iniData.enableCallKit}');
     }
     if(Platform.isAndroid) {
      iniData.listenTelState = true;
@@ -257,6 +269,16 @@ class _MyAppState extends State<MyApp> {
     //  iniData.serviceClassName = "com.app.teamlocus_sip.MyNotifService";
     }
     await SiprixVoipSdk().initialize(iniData, logsModel);
+    if (Platform.isIOS && kIosUsePushKit) {
+      try {
+        final token = await SiprixVoipSdk().getPushKitToken();
+        debugPrint('[PushKit] Connected/initialized. token: ${token ?? "null"}');
+        print('[PushKit] Connected/initialized. token: ${token ?? "null"}');
+      } catch (e) {
+        debugPrint('[PushKit] Initialized, but token fetch failed: $e');
+        print('[PushKit] Initialized, but token fetch failed: $e');
+      }
+    }
 
     //Set video params (if required)
     //VideoData vdoData = VideoData();

@@ -1,6 +1,8 @@
 import UIKit
 import Flutter
 import AVFoundation
+import PushKit
+import CallKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -63,6 +65,22 @@ import AVFoundation
     configureVoIPAudioSession()
   }
 
+  func pushRegistry(
+    _ registry: PKPushRegistry,
+    didReceiveIncomingPushWith payload: PKPushPayload,
+    for type: PKPushType,
+    completion: @escaping () -> Void
+  ) {
+    prepareVoIPAudioSession()
+    let providerConfiguration = CXProviderConfiguration(localizedName: "siprixTest")
+    let provider = CXProvider(configuration: providerConfiguration)
+    let update = CXCallUpdate()
+    update.remoteHandle = CXHandle(type: .generic, value: "Incoming call")
+
+    provider.reportNewIncomingCall(with: UUID(), update: update) { _ in
+      completion()
+    }
+  }
   override func application(
     _ application: UIApplication,
     continue userActivity: NSUserActivity,

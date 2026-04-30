@@ -51,6 +51,8 @@ class AppAccountsModel extends AccountsModel {
     String? token;
     if(Platform.isIOS) {
       token = await SiprixVoipSdk().getPushKitToken();//iOS - get PushKit VoIP token
+      print('[PushKit] addAccount fetched token: ${token ?? "null"}');
+      _logs?.print('[PushKit] addAccount fetched token: ${token ?? "null"}');
     }else if(Platform.isAndroid) {
      // token = await FirebaseMessaging.instance.getToken();//Android - get Firebase token
     }

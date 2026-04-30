@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:siprix_voip_sdk/calls_model.dart';
 import 'package:siprix_voip_sdk/cdrs_model.dart';
@@ -41,11 +42,24 @@ class AppCallsModel extends CallsModel {
   final List<CallMatcher> _callMatchers=[];//iOS PushKit specific impl
   Timer? _pushNotifTimer;
 
+  void _endCallKitForSipCallId(int sipCallId) {
+    if (!Platform.isIOS) return;
+    final int index = _callMatchers.indexWhere((c) => c.sip_CallId == sipCallId);
+    if (index == -1) return;
+    final String uuid = _callMatchers[index].callkit_CallUUID;
+    _callMatchers.removeAt(index);
+    if (uuid.isEmpty) return;
+    SiprixVoipSdk().endCallKitCall(uuid);
+    FlutterCallkitIncoming.endCall(uuid).catchError((_) {});
+  }
+
   /// Accepts the first incoming call that is still ringing (list order).
   Future<void> acceptFirstRingingIncoming() async {
     for (final c in this) {
       if (!c.isIncoming || c.state != CallState.ringing) continue;
       try {
+        // In-app answer should also dismiss any matching iOS CallKit row.
+        _endCallKitForSipCallId(c.myCallId);
         await c.accept(c.hasVideo);
       } catch (e) {
         _logs?.print('acceptFirstRingingIncoming callId:${c.myCallId} $e');
@@ -63,6 +77,8 @@ class AppCallsModel extends CallsModel {
     }
     for (final c in targets) {
       try {
+        // In-app reject should also dismiss any matching iOS CallKit row.
+        _endCallKitForSipCallId(c.myCallId);
         await c.reject();
       } catch (e) {
         _logs?.print('rejectAllRingingIncoming callId:${c.myCallId} $e');
@@ -74,6 +90,8 @@ class AppCallsModel extends CallsModel {
   @override
   void onIncomingPush(String callkit_CallUUID, Map<String, dynamic> pushPayload) {
     _logs?.print('onIncomingPush callkit_CallUUID:$callkit_CallUUID $pushPayload');
+    debugPrint('[PushKit] Incoming VoIP push received. uuid:$callkit_CallUUID payload:$pushPayload');
+    print('[PushKit] Incoming VoIP push received. uuid:$callkit_CallUUID');
     //Get data from 'pushPayload', which contains app specific details
     Map<String, dynamic>? apsPayload;
     try {
@@ -82,8 +100,12 @@ class AppCallsModel extends CallsModel {
       _logs?.print('onIncomingPush get payload err: $err');
     }
 
-    // String pushHint = apsPayload?["pushHint"] ?? CallMatcher.kStubPushHint;
-    String pushHint = pushPayload?["caller_number"];
+    // Same keys as onIncomingSip / PBX docs so PushKit row matches SIP INVITE.
+    final dynamic hintRaw = pushPayload?["caller_number"] ??
+        pushPayload?["callerNumber"] ??
+        pushPayload?["callerId"];
+    String pushHint = hintRaw?.toString().trim() ?? '';
+    if (pushHint.isEmpty) pushHint = CallMatcher.kStubPushHint;
     // Docs/curl samples use callerId; some servers send callerNumber.
     final dynamic handleRaw = pushPayload?["caller_number"] ?? pushPayload?["callerNumber"] ?? pushPayload?["callerId"];
     String genericHandle = handleRaw?.toString() ?? "genericHandle";
@@ -189,21 +211,11 @@ class AppCallsModel extends CallsModel {
     super.onTerminated(callId, statusCode);
 
     if(Platform.isIOS) {
-      int index = _callMatchers.indexWhere((c) => c.sip_CallId == callId);
-      if(index != -1) {
-        final uuid = _callMatchers[index].callkit_CallUUID;
-        _logs?.print('onTerminated removed call:$uuid');
-        _callMatchers.removeAt(index);
-        if (uuid.isNotEmpty) {
-          // End both plugin and native CallKit entry for this matched SIP call.
-          SiprixVoipSdk().endCallKitCall(uuid);
-          FlutterCallkitIncoming.endCall(uuid).catchError((_) {});
-          return;
-        }
-      }
+      _endCallKitForSipCallId(callId);
 
-      // Safety fallback: if matcher is missing, still clear visible CallKit UI.
-      FlutterCallkitIncoming.endAllCalls().catchError((_) {});
+      // Do not call endAllCalls() here: during cold start from kill state, onTerminated
+      // can run before the PushKit/SIP matcher list is synced, and ending every CallKit
+      // session drops the active incoming leg.
     }
   }
 
@@ -211,6 +223,8 @@ class AppCallsModel extends CallsModel {
     if(_pushNotifTimer != null) return;
 
     const Duration kTimerDelay = Duration(seconds: 1);
+    // After kill-state wake, SIP INVITE can lag behind PushKit while Flutter registers;
+    // 15s was too aggressive and cleared CallKit (and the call) before INVITE matched.
     const Duration kEndCallDelay = Duration(seconds: 15);
 
     _pushNotifTimer = Timer.periodic(kTimerDelay, (Timer timer) {
