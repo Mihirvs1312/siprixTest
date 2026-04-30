@@ -1,38 +1,22 @@
 package com.app.teamlocus_sip
 
-import android.app.Notification
 import android.util.Log
-import androidx.core.app.NotificationCompat
 import com.siprix.voip_sdk.CallNotifService
 
-//MyNotifService - allows to customize local notifications displayed when received incoming call
+// MyNotifService - customize incoming-call UI; keep Accept/Reject by delegating to the SDK
+// base implementation (CallStyle + PendingIntents). Override here only if you need extra
+// builder flags while still calling super, or copy super's CallStyle setup from CallNotifService.
 class MyNotifService : CallNotifService() {
-    private var TAG = "MyNotifService"
+    private val tag = "MyNotifService"
 
-    override  fun displayIncomingCallNotification(callId: Int, accId: Int,
-        withVideo: Boolean, hdrFrom: String?, hdrTo: String?
+    override fun displayIncomingCallNotification(
+        callId: Int,
+        accId: Int,
+        withVideo: Boolean,
+        hdrFrom: String?,
+        hdrTo: String?,
     ) {
-        Log.d(TAG, "displayIncomingCallNotification $callId")
-        //!!! Don't modify bundle and intents
-        val bundle = buildCallBundle(callId, accId, withVideo, hdrFrom, hdrTo)
-        val contentIntent = getIntentActivity(kActionIncomingCall, bundle)
-
-        //Modify notification and displayed text as it's required by the app
-        //val displayName = parseDisplayName(hdrFrom)
-        //val sipExt = parseExt(hdrFrom)
-        val contentStr = buildContentString(hdrFrom)//if required format own string here using parsed 'displayName' and 'sipExt'
-        val builder: NotificationCompat.Builder = NotificationCompat.Builder(this, kCallIncomingChannelId)
-            .setSmallIcon(appResources.iconId)
-            .setContentText(contentStr)
-            .setAutoCancel(true)
-            .setDefaults(Notification.DEFAULT_ALL)
-            .setContentIntent(contentIntent)
-            .setFullScreenIntent(contentIntent, true)
-            .setOngoing(true)
-            .setDeleteIntent(getIntentService(kActionIncomingCallStopRinger, bundle))
-            .setCategory(NotificationCompat.CATEGORY_CALL)
-
-        //!!! Use 'callId' as notification id
-        notifMgr.notify(callId, builder.build())
+        Log.d(tag, "displayIncomingCallNotification $callId")
+        super.displayIncomingCallNotification(callId, accId, withVideo, hdrFrom, hdrTo)
     }
 }

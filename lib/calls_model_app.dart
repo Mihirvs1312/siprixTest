@@ -70,6 +70,39 @@ class AppCallsModel extends CallsModel {
     }
   }
 
+  CallModel? _callById(int callId) {
+    for (var i = 0; i < length; i++) {
+      if (this[i].myCallId == callId) return this[i];
+    }
+    return null;
+  }
+
+  /// Android notification "Accept" can arrive before [onIncomingSip] finishes adding
+  /// the call to the list (two separate platform channel invocations).
+  @override
+  void onAcceptNotif(int callId, bool withVideo) {
+    final existing = _callById(callId);
+    if (existing != null) {
+      existing.accept(withVideo);
+      return;
+    }
+    Future<void> resolve() async {
+      for (var i = 0; i < 40; i++) {
+        final c = _callById(callId);
+        if (c != null && c.state == CallState.ringing) {
+          await c.accept(withVideo);
+          return;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+      }
+      _logs?.print(
+          'onAcceptNotif: callId $callId missing after wait; accepting first ringing');
+      await acceptFirstRingingIncoming();
+    }
+
+    unawaited(resolve());
+  }
+
    /// Handle iOS Pushkit notification received by library (parse payload, update CallKit window, store data from push payload)
   @override
   void onIncomingPush(String callkit_CallUUID, Map<String, dynamic> pushPayload) {
@@ -131,8 +164,16 @@ class AppCallsModel extends CallsModel {
     return '${h.substring(0, 8)}-${h.substring(8, 12)}-${h.substring(12, 16)}-${h.substring(16, 20)}-${h.substring(20, 32)}';
   }
 
+  /// Android: keep the SDK foreground service active during ringing/connected
+  /// calls so accept/reject and media are not throttled while the app is
+  /// backgrounded (see [SiprixVoipSdk.setForegroundMode]).
   @override
   void onIncomingSip(int callId, int accId, bool withVideo, String hdrFrom, String hdrTo) async {
+    if (Platform.isAndroid) {
+      final fg = SiprixVoipSdk().setForegroundMode(true);
+      if (fg != null) await fg;
+    }
+
     super.onIncomingSip(callId, accId, withVideo, hdrFrom, hdrTo);
 
     try {
@@ -188,6 +229,10 @@ class AppCallsModel extends CallsModel {
   void onTerminated(int callId, int statusCode) {
     super.onTerminated(callId, statusCode);
 
+    if (Platform.isAndroid && isEmpty) {
+      SiprixVoipSdk().setForegroundMode(false)?.catchError((_) {});
+    }
+
     if(Platform.isIOS) {
       int index =_callMatchers.indexWhere((c) => c.sip_CallId==callId);
       if(index != -1) {
@@ -199,6 +244,17 @@ class AppCallsModel extends CallsModel {
         }
       }
     }
+  }
+
+  /// Android only: when the Activity re-attaches, native may push call state
+  /// again; clearing avoids duplicate [CallModel]s. iOS is unchanged.
+  @override
+  void onSyncCallsState(Map<String, dynamic> argsMap) {
+    if (Platform.isAndroid) {
+      // ignore: invalid_use_of_protected_member
+      callItems.clear();
+    }
+    super.onSyncCallsState(argsMap);
   }
 
   void _startPushNotifTimer() {

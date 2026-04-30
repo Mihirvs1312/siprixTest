@@ -102,6 +102,12 @@ Future<void> _initializeFCM() async {
   if(Platform.isAndroid) {
     WidgetsFlutterBinding.ensureInitialized();
     await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    // Android 13+: POST_NOTIFICATIONS — needed for Siprix incoming-call UI when app is not open.
+    await FirebaseMessaging.instance.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   }
 }
@@ -253,7 +259,7 @@ class _MyAppState extends State<MyApp> {
     if(Platform.isAndroid) {
      iniData.listenTelState = true;
      iniData.listenVolChange = true;
-    //  iniData.serviceClassName = "com.app.teamlocus_sip.MyNotifService";
+     iniData.serviceClassName = "com.app.teamlocus_sip.MyNotifService";
     }
     await SiprixVoipSdk().initialize(iniData, logsModel);
 

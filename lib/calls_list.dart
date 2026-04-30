@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -343,13 +344,33 @@ class _SwitchedCallWidgetState extends State<SwitchedCallWidget> {
   }
 
   void _acceptCall() {
-    context.read<AppCallsModel>().acceptFirstRingingIncoming()
-      .catchError(showSnackBar);
+    if (Platform.isAndroid) {
+      if (widget.myCall.state != CallState.ringing ||
+          !widget.myCall.isIncoming) {
+        return;
+      }
+      widget.myCall.accept(widget.myCall.hasVideo).catchError(showSnackBar);
+      return;
+    }else {
+      context.read<AppCallsModel>().acceptFirstRingingIncoming().catchError(
+        showSnackBar,
+      );
+    }
   }
 
   void _rejectCall() {
-    context.read<AppCallsModel>().rejectAllRingingIncoming()
-      .catchError(showSnackBar);
+    if (Platform.isAndroid) {
+      if (widget.myCall.state != CallState.ringing ||
+          !widget.myCall.isIncoming) {
+        return;
+      }
+      widget.myCall.reject().catchError(showSnackBar);
+      return;
+    }else {
+      context.read<AppCallsModel>().rejectAllRingingIncoming().catchError(
+        showSnackBar,
+      );
+    }
   }
 
   void _holdCall() {

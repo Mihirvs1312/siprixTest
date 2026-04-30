@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Foreground mode permission -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
@@ -11,15 +14,13 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 
-        <!-- Uncomment if required to use own service and notification implementation.
-             Don't forget to set
-             `iniData.serviceClassName = "com.app.teamlocus_sip.MyNotifService"`
-              in the Flutter part of the project
+        <!-- Required for incoming calls when the app is backgrounded or swiped away:
+             pairs with InitData.serviceClassName in Dart. -->
         <service
             android:name=".MyNotifService"
             android:exported="false"
             android:stopWithTask="false"
-            android:foregroundServiceType="phoneCall" /> -->
+            android:foregroundServiceType="phoneCall" />
 
         <activity
             android:name=".MainActivity"
