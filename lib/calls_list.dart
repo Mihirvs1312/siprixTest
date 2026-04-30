@@ -118,7 +118,9 @@ class SwitchedCallWidget extends StatefulWidget {
 class _SwitchedCallWidgetState extends State<SwitchedCallWidget> {
   final SiprixVideoRenderer _localRenderer  = SiprixVideoRenderer();
   final SiprixVideoRenderer _remoteRenderer = SiprixVideoRenderer();
-  static const double eIconSize = 36;
+  static const double eIconSize = 40;
+  static const double eIncomingActionButtonSize = 64;
+  static const double eIncomingActionIconSize = 40;
 
   @override
   void initState() {
@@ -299,12 +301,26 @@ class _SwitchedCallWidgetState extends State<SwitchedCallWidget> {
   Widget _buildIncomingCallAcceptReject() {
     return
       Wrap(spacing: 50, runSpacing: 10, children: [
-        IconButton.filledTonal(onPressed: _rejectCall, icon: const Icon(Icons.call_end),
-            style: OutlinedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+        IconButton.filledTonal(
+            onPressed: _rejectCall,
+            iconSize: eIncomingActionIconSize,
+            icon: const Icon(Icons.call_end),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.square(eIncomingActionButtonSize),
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
         ),
 
-        IconButton.filledTonal(onPressed: _acceptCall, icon: const Icon(Icons.call),
-            style: OutlinedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+        IconButton.filledTonal(
+            onPressed: _acceptCall,
+            iconSize: eIncomingActionIconSize,
+            icon: const Icon(Icons.call),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.square(eIncomingActionButtonSize),
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
         )
       ]);
   }

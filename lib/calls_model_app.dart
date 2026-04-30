@@ -189,15 +189,21 @@ class AppCallsModel extends CallsModel {
     super.onTerminated(callId, statusCode);
 
     if(Platform.isIOS) {
-      int index =_callMatchers.indexWhere((c) => c.sip_CallId==callId);
+      int index = _callMatchers.indexWhere((c) => c.sip_CallId == callId);
       if(index != -1) {
         final uuid = _callMatchers[index].callkit_CallUUID;
         _logs?.print('onTerminated removed call:$uuid');
         _callMatchers.removeAt(index);
         if (uuid.isNotEmpty) {
+          // End both plugin and native CallKit entry for this matched SIP call.
+          SiprixVoipSdk().endCallKitCall(uuid);
           FlutterCallkitIncoming.endCall(uuid).catchError((_) {});
+          return;
         }
       }
+
+      // Safety fallback: if matcher is missing, still clear visible CallKit UI.
+      FlutterCallkitIncoming.endAllCalls().catchError((_) {});
     }
   }
 

@@ -233,7 +233,7 @@ class _MyAppState extends State<MyApp> {
     iniData.logLevelIde = LogLevel.info;
 
     //- Put here license key after purchase, for trial evaluation key is not required -//
-    //iniData.license  = "...license-key...";
+    iniData.license  = "LicensedTo[DeepFoodsInc]_Platforms[WIN_ANDR_IOS_OSX_LIN]_Features[V_MC_MA_MSG]_SupportTill[20260718]_UpdatesTill[20260718]_Key[MC0CFEJxwm005R6H9wtzpH3irCTyGx3rAhUAwjVi3+UwgFgmA1YtHkRqjH85NuA=]";
 
     //- Uncomment if required -//
     //iniData.enableVUmeter = true;
