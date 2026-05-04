@@ -129,13 +129,31 @@ class AppCallsModel extends CallsModel {
 
   void _endCallKitForSipCallId(int sipCallId) {
     if (!Platform.isIOS) return;
-    final int index = _callMatchers.indexWhere((c) => c.sip_CallId == sipCallId);
-    if (index == -1) return;
-    final String uuid = _callMatchers[index].callkit_CallUUID;
-    _callMatchers.removeAt(index);
-    if (uuid.isEmpty) return;
-    SiprixVoipSdk().endCallKitCall(uuid);
-    FlutterCallkitIncoming.endCall(uuid).catchError((_) {});
+    // Remove every matcher for this SIP id (avoids duplicate rows after reconnects).
+    for (var i = _callMatchers.length - 1; i >= 0; i--) {
+      if (_callMatchers[i].sip_CallId != sipCallId) continue;
+      final String uuid = _callMatchers[i].callkit_CallUUID;
+      _callMatchers.removeAt(i);
+      if (uuid.isEmpty) continue;
+      SiprixVoipSdk().endCallKitCall(uuid);
+      FlutterCallkitIncoming.endCall(uuid).catchError((_) {});
+    }
+  }
+
+  /// When the SIP stack has no calls left, tear down any stray CallKit UI so the next VoIP push can present.
+  void _resetIosCallKitWhenNoSipCalls() {
+    if (!Platform.isIOS) return;
+    if (isNotEmpty) return;
+
+    for (final m in List<CallMatcher>.from(_callMatchers)) {
+      if (m.callkit_CallUUID.isEmpty) continue;
+      SiprixVoipSdk().endCallKitCall(m.callkit_CallUUID);
+      FlutterCallkitIncoming.endCall(m.callkit_CallUUID).catchError((_) {});
+    }
+    _callMatchers.clear();
+    _pushNotifTimer?.cancel();
+    _pushNotifTimer = null;
+    FlutterCallkitIncoming.endAllCalls().catchError((_) {});
   }
 
   /// Accepts the first incoming call that is still ringing (list order).
@@ -200,12 +218,21 @@ class AppCallsModel extends CallsModel {
     int? sipCallId = null;
 
     int index = _callMatchers.indexWhere((c) => c.push_Hint == pushHint);
-    if(index!=-1) {
-      //Case: SIP already received
+    if (index != -1) {
+      // SIP may have shown fallback CallKit with a random UUID; PushKit always carries the real id.
       sipCallId = _callMatchers[index].sip_CallId;
-    }
-    else {
-      //Case: SIP hasn't received yet
+      final existing = _callMatchers[index];
+      final oldUuid = existing.callkit_CallUUID;
+      if (oldUuid.isNotEmpty &&
+          callkit_CallUUID.isNotEmpty &&
+          oldUuid != callkit_CallUUID) {
+        SiprixVoipSdk().endCallKitCall(oldUuid);
+        FlutterCallkitIncoming.endCall(oldUuid).catchError((_) {});
+        existing.callkit_CallUUID = callkit_CallUUID;
+      } else if (callkit_CallUUID.isNotEmpty) {
+        existing.callkit_CallUUID = callkit_CallUUID;
+      }
+    } else {
       _callMatchers.add(CallMatcher(callkit_CallUUID, pushHint));
     }
 
@@ -305,10 +332,8 @@ class AppCallsModel extends CallsModel {
 
     if (Platform.isIOS) {
       _endCallKitForSipCallId(callId);
-
-      // Do not call endAllCalls() here: during cold start from kill state, onTerminated
-      // can run before the PushKit/SIP matcher list is synced, and ending every CallKit
-      // session drops the active incoming leg.
+      // After the last SIP call ends, clear any orphan CallKit state so the next VoIP works.
+      _resetIosCallKitWhenNoSipCalls();
     }
 
     if (endedCall != null) {
