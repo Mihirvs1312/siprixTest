@@ -11,7 +11,6 @@ import 'package:siprix_voip_sdk/cdrs_model.dart';
 import 'package:siprix_voip_sdk/siprix_voip_sdk.dart';
 
 import 'callkit_incoming_fallback.dart';
-import 'sip_repository.dart';
 import 'voip_ios_config.dart';
 
 /// Helper class used to keep different ids of the same call
@@ -42,90 +41,6 @@ class AppCallsModel extends CallsModel {
   final ILogsModel? _logs;
   final List<CallMatcher> _callMatchers=[];//iOS PushKit specific impl
   Timer? _pushNotifTimer;
-
-  CallModel? _lastOutgoingInviteMatch(CallDestination dest) {
-    final accUri = accountsModel.getUri(dest.fromAccId);
-    CallModel? match;
-    for (final c in this) {
-      if (!c.isIncoming &&
-          c.accUri == accUri &&
-          c.remoteExt == dest.toExt) {
-        match = c;
-      }
-    }
-    return match;
-  }
-
-  String _localExtensionFromAccUri(String accUriStr) {
-    final resolved = accountsModel.getUri(accountsModel.getAccId(accUriStr));
-    final uri =
-        (resolved.isNotEmpty && resolved != '?') ? resolved : accUriStr;
-    return uri.contains('@') ? uri.split('@').first.trim() : uri.trim();
-  }
-
-  (String callerName, String callerNumber, String receiverNumber) _partiesForNotify(
-    CallModel c, {
-    String? inviteDisplName,
-  }) {
-    final local = _localExtensionFromAccUri(c.accUri);
-    final remote = c.remoteExt.trim();
-
-    if (c.isIncoming) {
-      final name =
-          c.displName.trim().isNotEmpty ? c.displName.trim() : remote;
-      return (name, remote, local);
-    }
-
-    final inviteName = inviteDisplName?.trim();
-    final callName = c.displName.trim();
-    final name = (inviteName != null && inviteName.isNotEmpty)
-        ? inviteName
-        : (callName.isNotEmpty ? callName : local);
-    return (name, local, remote);
-  }
-
-  Future<void> _postCallNotify(
-    CallModel c,
-    String type, {
-    String? inviteDisplName,
-  }) async {
-    if (c.myCallId == 0) return;
-
-    final parties = _partiesForNotify(c, inviteDisplName: inviteDisplName);
-
-    try {
-      final result = await SipRepository.notifyCall(
-        callId: 'call-${c.myCallId}',
-        callerName: parties.$1,
-        callerNumber: parties.$2,
-        receiverNumber: parties.$3,
-        type: type,
-      );
-      if (result.status != 'ok') {
-        _logs?.print(
-            'Call notify ($type): ${result.message ?? result.status}');
-      }
-    } catch (e) {
-      _logs?.print('Call notify ($type) failed: $e');
-    }
-  }
-
-  Future<void> _postOutboundCallStartedNotify(CallDestination dest) async {
-    final call = _lastOutgoingInviteMatch(dest);
-    if (call == null || call.myCallId == 0) return;
-
-    await _postCallNotify(
-      call,
-      'start',
-      inviteDisplName: dest.displName,
-    );
-  }
-
-  @override
-  Future<void> invite(CallDestination dest) async {
-    await super.invite(dest);
-    unawaited(_postOutboundCallStartedNotify(dest));
-  }
 
   void _endCallKitForSipCallId(int sipCallId) {
     if (!Platform.isIOS) return;
@@ -320,24 +235,12 @@ class AppCallsModel extends CallsModel {
 
   @override
   void onTerminated(int callId, int statusCode) {
-    CallModel? endedCall;
-    for (final c in this) {
-      if (c.myCallId == callId) {
-        endedCall = c;
-        break;
-      }
-    }
-
     super.onTerminated(callId, statusCode);
 
     if (Platform.isIOS) {
       _endCallKitForSipCallId(callId);
       // After the last SIP call ends, clear any orphan CallKit state so the next VoIP works.
       _resetIosCallKitWhenNoSipCalls();
-    }
-
-    if (endedCall != null) {
-      unawaited(_postCallNotify(endedCall, 'End'));
     }
   }
 

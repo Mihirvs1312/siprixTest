@@ -46,48 +46,4 @@ class SipRepository {
       );
     }
   }
-
-  /// POST `/notification` — tells the backend to send a push (e.g. `type: start`).
-  static Future<ApiResponse<void>> notifyCall({
-    required String callId,
-    required String callerName,
-    required String callerNumber,
-    required String receiverNumber,
-    required String type,
-  }) async {
-    try {
-      final response = await _dio.post(
-        '${AppSettings.baseUrlSip}/notification',
-        data: {
-          'callId': callId,
-          'caller_name': callerName,
-          'caller_number': callerNumber,
-          'receiver_number': receiverNumber,
-          'type': type,
-        },
-      );
-      final raw = response.data;
-      if (raw is! Map) {
-        return ApiResponse<void>(status: 'error', message: 'Invalid response');
-      }
-      final map = Map<String, dynamic>.from(raw);
-      final success = map['success'] == true;
-      final legacyOk = map['status'] == 'ok';
-      if (success || legacyOk) {
-        final msg = map['message'] as String?;
-        return ApiResponse<void>(status: 'ok', message: msg);
-      }
-      return ApiResponse<void>(
-        status: 'error',
-        message: map['message'] as String? ??
-            response.statusMessage ??
-            'Request failed',
-      );
-    } on DioException catch (e) {
-      return ApiResponse<void>(
-        status: 'error',
-        message: e.message ?? 'Network error',
-      );
-    }
-  }
 }
