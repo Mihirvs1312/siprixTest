@@ -11,6 +11,7 @@ import 'package:siprix_voip_sdk/logs_model.dart';
 import 'package:siprix_voip_sdk/siprix_voip_sdk.dart';
 
 import 'firebase_options.dart';
+import 'voip_register_headers.dart';
 
 const String kCallChannelId = 'incoming_call_channel';
 const String kCallChannelName = 'Incoming Calls';
@@ -141,6 +142,7 @@ Future<void> _handleBackgroundCallPush(Map<String, dynamic> data) async {
     final accJsonStr = prefs.getString('sipAccount') ?? '';
     if (accJsonStr.isNotEmpty) {
       final acc = AccountModel.fromJson(jsonDecode(accJsonStr));
+      acc.xheaders = await buildVoipRegisterHeaders(mergeFrom: acc.xheaders);
       await SiprixVoipSdk().addAccount(acc);
       debugPrint('Background: Siprix initialized and account loaded for push wakeup');
     }

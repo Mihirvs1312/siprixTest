@@ -9,6 +9,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.3.59"
+  android_id:
+    dependency: "direct main"
+    description:
+      name: android_id
+      sha256: "50d62501d623a7e7358b3ceffd1bdd9b420292eba66cec8347d33ed10791f28e"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.5.1"
   args:
     dependency: transitive
     description:
@@ -73,6 +81,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.12"
+  device_info_plus:
+    dependency: "direct main"
+    description:
+      name: device_info_plus
+      sha256: "98f28b42168cc509abc92f88518882fd58061ea372d7999aecc424345c7bff6a"
+      url: "https://pub.dev"
+    source: hosted
+    version: "11.5.0"
+  device_info_plus_platform_interface:
+    dependency: transitive
+    description:
+      name: device_info_plus_platform_interface
+      sha256: e1ea89119e34903dca74b883d0dd78eb762814f97fb6c76f35e9ff74d261a18f
+      url: "https://pub.dev"
+    source: hosted
+    version: "7.0.3"
   dio:
     dependency: "direct main"
     description:
@@ -491,42 +515,42 @@ packages:
     dependency: "direct main"
     description:
       name: siprix_voip_sdk
-      sha256: "8a09a6acfeca748342878aeda55baad19859854349818e746504c5761c1d0b77"
+      sha256: ca165c682896f695c1786c5b760d40e1307e86450eff8a4415c498f67edcd19c
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.36"
+    version: "1.0.37"
   siprix_voip_sdk_android:
     dependency: transitive
     description:
       name: siprix_voip_sdk_android
-      sha256: aa512161b926934caa496de8a3aab48de23d06aea675e9971d65c05b8f8da428
+      sha256: "7456ede34f8489f77aca3be2de066829b8fac6deb8c158378a36e0bc290ae2d0"
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.29"
+    version: "1.0.37"
   siprix_voip_sdk_ios:
     dependency: transitive
     description:
       name: siprix_voip_sdk_ios
-      sha256: "0d29b1f45c1384a4433e943e27253e076bfbe80808ba43c774d1c9efaa0c4bed"
+      sha256: "97a5233fce539eee3b2fc0074087055ea2aca119021d98a69bc20fdb1391017c"
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.33"
+    version: "1.0.37"
   siprix_voip_sdk_linux:
     dependency: transitive
     description:
       name: siprix_voip_sdk_linux
-      sha256: "45f4465b12e592278271280d50db82164484ae0b67f5fd2af3eeca690a648ae2"
+      sha256: e31bd9e92e7670983defd9b1b5649602498b62089d50a94c13b1a1ac69f5ba65
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.23"
+    version: "1.0.37"
   siprix_voip_sdk_macos:
     dependency: transitive
     description:
       name: siprix_voip_sdk_macos
-      sha256: "2c22022d6ed1bc3c549b72b2d6ce789bc62ab0ad420f65fc54c2cc7ac580a5c6"
+      sha256: "81ed16b91e9af31cc36c03571b34d627e9d4fffdb19350937beaa3786f08a4aa"
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.23"
+    version: "1.0.37"
   siprix_voip_sdk_platform_interface:
     dependency: transitive
     description:
@@ -539,10 +563,10 @@ packages:
     dependency: transitive
     description:
       name: siprix_voip_sdk_windows
-      sha256: "4d8f31ebcad541307ece2165ddf6124a38706c5a116b0220450d5692c12e9b47"
+      sha256: "6b4043b3600a52a4e4e1f768b90be4d09827eae6f45d58980e0b77a4dbdd24fe"
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.24"
+    version: "1.0.37"
   sky_engine:
     dependency: transitive
     description: flutter
@@ -652,6 +676,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.4"
+  win32:
+    dependency: transitive
+    description:
+      name: win32
+      sha256: "329edf97fdd893e0f1e3b9e88d6a0e627128cc17cc316a8d67fda8f1451178ba"
+      url: "https://pub.dev"
+    source: hosted
+    version: "5.13.0"
+  win32_registry:
+    dependency: transitive
+    description:
+      name: win32_registry
+      sha256: "6f1b564492d0147b330dd794fee8f512cec4977957f310f9951b5f9d83618dae"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.1.0"
   xdg_directories:
     dependency: transitive
     description:
