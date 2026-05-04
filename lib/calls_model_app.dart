@@ -11,6 +11,7 @@ import 'package:siprix_voip_sdk/cdrs_model.dart';
 import 'package:siprix_voip_sdk/siprix_voip_sdk.dart';
 
 import 'callkit_incoming_fallback.dart';
+import 'sip_repository.dart';
 import 'voip_ios_config.dart';
 
 /// Helper class used to keep different ids of the same call
@@ -41,6 +42,55 @@ class AppCallsModel extends CallsModel {
   final ILogsModel? _logs;
   final List<CallMatcher> _callMatchers=[];//iOS PushKit specific impl
   Timer? _pushNotifTimer;
+
+  CallModel? _lastOutgoingInviteMatch(CallDestination dest) {
+    final accUri = accountsModel.getUri(dest.fromAccId);
+    CallModel? match;
+    for (final c in this) {
+      if (!c.isIncoming &&
+          c.accUri == accUri &&
+          c.remoteExt == dest.toExt) {
+        match = c;
+      }
+    }
+    return match;
+  }
+
+  Future<void> _postOutboundCallStartedNotify(CallDestination dest) async {
+    final call = _lastOutgoingInviteMatch(dest);
+    if (call == null || call.myCallId == 0) return;
+
+    final uri = accountsModel.getUri(dest.fromAccId);
+    final callerNumber =
+        uri.contains('@') ? uri.split('@').first.trim() : uri.trim();
+    final fromDest =
+        dest.displName?.trim().isNotEmpty == true ? dest.displName!.trim() : null;
+    final fromCall =
+        call.displName.trim().isNotEmpty ? call.displName.trim() : null;
+    final callerName = fromDest ?? fromCall ?? callerNumber;
+
+    try {
+      final result = await SipRepository.notifyCall(
+        callId: 'call-${call.myCallId}',
+        callerName: callerName,
+        callerNumber: callerNumber,
+        receiverNumber: dest.toExt,
+        type: 'start',
+      );
+      if (result.status != 'ok') {
+        _logs?.print(
+            'Call start notify API: ${result.message ?? result.status}');
+      }
+    } catch (e) {
+      _logs?.print('Call start notify failed: $e');
+    }
+  }
+
+  @override
+  Future<void> invite(CallDestination dest) async {
+    await super.invite(dest);
+    unawaited(_postOutboundCallStartedNotify(dest));
+  }
 
   void _endCallKitForSipCallId(int sipCallId) {
     if (!Platform.isIOS) return;

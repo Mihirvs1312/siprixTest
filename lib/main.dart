@@ -21,6 +21,7 @@ import 'package:siprix_voip_sdk/siprix_voip_sdk.dart';
 import 'accouns_model_app.dart';
 import 'callkit_incoming_fallback.dart';
 import 'calls_model_app.dart';
+import 'sip_repository.dart';
 import 'subscr_model_app.dart';
 
 import 'account_add.dart';
@@ -48,6 +49,7 @@ void main() async {
 
   //Create models
   LogsModel logsModel           = LogsModel(true);//Set 'false' when logs won't rendering on UI
+  SipRepository.configure(logs: logsModel);
   CdrsModel cdrsModel           = CdrsModel();//List of recent calls (Call Details Records)
 
   DevicesModel devicesModel      = DevicesModel(logsModel);//List of devices

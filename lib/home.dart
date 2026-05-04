@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 //import 'dart:io' show Platform;
 
 import 'package:siprix_voip_sdk/network_model.dart';
-import 'package:siprix_voip_sdk/logs_model.dart';
 
 import 'calls_model_app.dart';
 import 'accounts_list.dart';
@@ -57,7 +56,7 @@ class _HomePageState extends State<HomePage> {
         bottomNavigationBar: BottomNavigationBar(
           items: <BottomNavigationBarItem>[
             const BottomNavigationBarItem(icon: Icon(Icons.widgets), label: 'Accounts'),
-                  BottomNavigationBarItem(icon: _callsTabIcon(), label: 'Calls'),
+            BottomNavigationBarItem(icon: _callsTabIcon(), label: 'Calls'),
           ],
           currentIndex: _selectedPageIndex,
           type: BottomNavigationBarType.fixed,
@@ -92,23 +91,5 @@ class _HomePageState extends State<HomePage> {
 
   void _onShowSettings() {
     Navigator.of(context).pushNamed(SettingsPage.routeName);
-  }
-}
-
-////////////////////////////////////////////////////////////////////////////////////////
-//LogsPage - represents diagnostic messages
-
-class LogsPage extends StatelessWidget {
-  const LogsPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(padding: const EdgeInsets.all(5.0),
-      child: Consumer<LogsModel>(
-        builder: (context, logsModel, child) {
-          return SelectableText(logsModel.logStr, style: Theme.of(context).textTheme.bodySmall);
-        }
-      )
-    );
   }
 }
