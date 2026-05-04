@@ -56,34 +56,69 @@ class AppCallsModel extends CallsModel {
     return match;
   }
 
+  String _localExtensionFromAccUri(String accUriStr) {
+    final resolved = accountsModel.getUri(accountsModel.getAccId(accUriStr));
+    final uri =
+        (resolved.isNotEmpty && resolved != '?') ? resolved : accUriStr;
+    return uri.contains('@') ? uri.split('@').first.trim() : uri.trim();
+  }
+
+  (String callerName, String callerNumber, String receiverNumber) _partiesForNotify(
+    CallModel c, {
+    String? inviteDisplName,
+  }) {
+    final local = _localExtensionFromAccUri(c.accUri);
+    final remote = c.remoteExt.trim();
+
+    if (c.isIncoming) {
+      final name =
+          c.displName.trim().isNotEmpty ? c.displName.trim() : remote;
+      return (name, remote, local);
+    }
+
+    final inviteName = inviteDisplName?.trim();
+    final callName = c.displName.trim();
+    final name = (inviteName != null && inviteName.isNotEmpty)
+        ? inviteName
+        : (callName.isNotEmpty ? callName : local);
+    return (name, local, remote);
+  }
+
+  Future<void> _postCallNotify(
+    CallModel c,
+    String type, {
+    String? inviteDisplName,
+  }) async {
+    if (c.myCallId == 0) return;
+
+    final parties = _partiesForNotify(c, inviteDisplName: inviteDisplName);
+
+    try {
+      final result = await SipRepository.notifyCall(
+        callId: 'call-${c.myCallId}',
+        callerName: parties.$1,
+        callerNumber: parties.$2,
+        receiverNumber: parties.$3,
+        type: type,
+      );
+      if (result.status != 'ok') {
+        _logs?.print(
+            'Call notify ($type): ${result.message ?? result.status}');
+      }
+    } catch (e) {
+      _logs?.print('Call notify ($type) failed: $e');
+    }
+  }
+
   Future<void> _postOutboundCallStartedNotify(CallDestination dest) async {
     final call = _lastOutgoingInviteMatch(dest);
     if (call == null || call.myCallId == 0) return;
 
-    final uri = accountsModel.getUri(dest.fromAccId);
-    final callerNumber =
-        uri.contains('@') ? uri.split('@').first.trim() : uri.trim();
-    final fromDest =
-        dest.displName?.trim().isNotEmpty == true ? dest.displName!.trim() : null;
-    final fromCall =
-        call.displName.trim().isNotEmpty ? call.displName.trim() : null;
-    final callerName = fromDest ?? fromCall ?? callerNumber;
-
-    try {
-      final result = await SipRepository.notifyCall(
-        callId: 'call-${call.myCallId}',
-        callerName: callerName,
-        callerNumber: callerNumber,
-        receiverNumber: dest.toExt,
-        type: 'start',
-      );
-      if (result.status != 'ok') {
-        _logs?.print(
-            'Call start notify API: ${result.message ?? result.status}');
-      }
-    } catch (e) {
-      _logs?.print('Call start notify failed: $e');
-    }
+    await _postCallNotify(
+      call,
+      'start',
+      inviteDisplName: dest.displName,
+    );
   }
 
   @override
@@ -258,14 +293,26 @@ class AppCallsModel extends CallsModel {
 
   @override
   void onTerminated(int callId, int statusCode) {
+    CallModel? endedCall;
+    for (final c in this) {
+      if (c.myCallId == callId) {
+        endedCall = c;
+        break;
+      }
+    }
+
     super.onTerminated(callId, statusCode);
 
-    if(Platform.isIOS) {
+    if (Platform.isIOS) {
       _endCallKitForSipCallId(callId);
 
       // Do not call endAllCalls() here: during cold start from kill state, onTerminated
       // can run before the PushKit/SIP matcher list is synced, and ending every CallKit
       // session drops the active incoming leg.
+    }
+
+    if (endedCall != null) {
+      unawaited(_postCallNotify(endedCall, 'End'));
     }
   }
 
