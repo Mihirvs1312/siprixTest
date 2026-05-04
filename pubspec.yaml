@@ -31,8 +31,6 @@ dependencies:
   flutter_local_notifications: ^18.0.1
   dio: ^5.8.0
   flutter_callkit_incoming: ^3.0.0
-  device_info_plus: ^11.3.0
-  android_id: ^0.5.1
 
 dev_dependencies:
   integration_test:

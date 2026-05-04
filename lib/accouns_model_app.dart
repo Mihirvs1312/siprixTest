@@ -7,12 +7,17 @@ import 'package:siprix_voip_sdk/siprix_voip_sdk.dart';
 
 import 'firebase_util.dart';
 import 'sip_repository.dart';
-import 'voip_register_headers.dart';
 
 /// Accounts list model (contains app level code of managing accіounts)
 class AppAccountsModel extends AccountsModel {
   AppAccountsModel([this._logs]) : super(_logs);
   final ILogsModel? _logs;
+
+  static String get _deviceType {
+    if (Platform.isIOS) return 'ios';
+    if (Platform.isAndroid) return 'android';
+    return Platform.operatingSystem;
+  }
 
   Future<void> _saveTokenToBackend(String extension) async {
     try {
@@ -30,7 +35,7 @@ class AppAccountsModel extends AccountsModel {
 
       final result = await SipRepository.saveToken({
         'extension': extension,
-        'device_type': voipDeviceTypeLabel(),
+        'device_type': _deviceType,
         'token': token,
       });
       if (result.status != 'ok') {
@@ -52,12 +57,11 @@ class AppAccountsModel extends AccountsModel {
      // token = await FirebaseMessaging.instance.getToken();//Android - get Firebase token
     }
 
-    acc.xheaders = await buildVoipRegisterHeaders(
-      pushToken: token,
-      mergeFrom: acc.xheaders,
-    );
-    if (token != null) {
+    //When resolved - put token into SIP REGISTER request
+    if(token != null) {
       _logs?.print('AddAccount with push token: $token');
+      acc.xheaders = {"X-Token" : token};//Put token into separate header
+      //acc.xContactUriParams = {"X-Token" : token};//put token into ContactUriParams
     }
     final ext = acc.sipExtension;
       if (ext.isNotEmpty) {
