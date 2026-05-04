@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'dart:math';
 
 //import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:siprix_voip_sdk/accounts_model.dart';
 import 'package:siprix_voip_sdk/siprix_voip_sdk.dart';
 
@@ -13,10 +15,36 @@ class AppAccountsModel extends AccountsModel {
   AppAccountsModel([this._logs]) : super(_logs);
   final ILogsModel? _logs;
 
+  static const _deviceIdPrefsKey = 'siprix_app_device_id';
+
   static String get _deviceType {
     if (Platform.isIOS) return 'ios';
     if (Platform.isAndroid) return 'android';
     return Platform.operatingSystem;
+  }
+
+  /// RFC 4122 version 4 UUID (random), 128 bits from [Random.secure].
+  static String _newDeviceId() {
+    final r = Random.secure();
+    final b = List<int>.generate(16, (_) => r.nextInt(256));
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    const hex = '0123456789abcdef';
+    String h(int x) => '${hex[x >> 4]}${hex[x & 0xf]}';
+    return '${h(b[0])}${h(b[1])}${h(b[2])}${h(b[3])}-'
+        '${h(b[4])}${h(b[5])}-'
+        '${h(b[6])}${h(b[7])}-'
+        '${h(b[8])}${h(b[9])}-'
+        '${h(b[10])}${h(b[11])}${h(b[12])}${h(b[13])}${h(b[14])}${h(b[15])}';
+  }
+
+  Future<String> _getOrCreateDeviceId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final existing = prefs.getString(_deviceIdPrefsKey);
+    if (existing != null && existing.isNotEmpty) return existing;
+    final id = _newDeviceId();
+    await prefs.setString(_deviceIdPrefsKey, id);
+    return id;
   }
 
   Future<void> _saveTokenToBackend(String extension) async {
@@ -57,17 +85,22 @@ class AppAccountsModel extends AccountsModel {
      // token = await FirebaseMessaging.instance.getToken();//Android - get Firebase token
     }
 
+    final deviceId = await _getOrCreateDeviceId();
+    acc.xContactUriParams = {
+      'device_id': deviceId,
+      'device_type': _deviceType,
+    };
+
     //When resolved - put token into SIP REGISTER request
-    if(token != null) {
+    if (token != null) {
       _logs?.print('AddAccount with push token: $token');
-      acc.xheaders = {"X-Token" : token};//Put token into separate header
-      //acc.xContactUriParams = {"X-Token" : token};//put token into ContactUriParams
+      acc.xheaders = {'X-Token': token};
     }
     final ext = acc.sipExtension;
-      if (ext.isNotEmpty) {
-        await _saveTokenToBackend(ext);
-      }
-    await super.addAccount(acc, saveChanges:saveChanges);
+    if (ext.isNotEmpty) {
+      await _saveTokenToBackend(ext);
+    }
+    await super.addAccount(acc, saveChanges: saveChanges);
   }
 
   /// Awaits each native [registerAccount] call. The base [AccountsModel.refreshRegistration]
