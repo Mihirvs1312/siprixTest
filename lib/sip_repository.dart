@@ -11,7 +11,7 @@ class SipRepository {
   static Future<ApiResponse<void>> saveToken(Object data) async {
     try {
       final response = await _dio.post(
-        '${AppSettings.baseUrlSip}/save-token',
+        '${AppSettings.baseUrlSip}/notification/save-token',
         data: data,
       );
       final raw = response.data;
