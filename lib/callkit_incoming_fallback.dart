@@ -6,6 +6,8 @@ import 'package:flutter_callkit_incoming/entities/notification_params.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:siprix_voip_sdk/siprix_voip_sdk.dart';
 
+import 'callkit_event_bridge.dart';
+
 const String _kSiprixFallbackExtraKey = 'siprixFallback';
 
 bool _listenerRegistered = false;
@@ -21,21 +23,28 @@ void registerIncomingSipFallbackCallKitListener() {
     final raw = event.body;
     if (raw is! Map) return;
     final body = Map<String, dynamic>.from(raw);
-    final extraRaw = body['extra'];
-    if (extraRaw is! Map) return;
-    final extra = Map<String, dynamic>.from(extraRaw);
-    if (extra[_kSiprixFallbackExtraKey] != true) return;
-
-    final int? sipCallId = (extra['sipCallId'] as num?)?.toInt();
-    if (sipCallId == null) return;
-
-    final bool withVideo = extra['withVideo'] == true;
     final String? callKitId =
         body['id'] as String? ?? body['uuid'] as String?;
 
+    Map<String, dynamic>? extra;
+    final extraRaw = body['extra'];
+    if (extraRaw is Map) {
+      extra = Map<String, dynamic>.from(extraRaw);
+    }
+
+    int sipCallId = (extra?['sipCallId'] as num?)?.toInt() ?? 0;
+    if (sipCallId == 0 && callKitId != null) {
+      sipCallId = resolveSipCallIdForCallKitUuid?.call(callKitId) ?? 0;
+    }
+
+    final bool withVideo = extra?['withVideo'] == true;
+
+    // Decline / hang up from CallKit or VoIP incoming UI must clear SIP and dismiss all surfaces.
+    var didUserHangUp = false;
     try {
       switch (event.event) {
         case Event.actionCallAccept:
+          if (sipCallId <= 0) return;
           await SiprixVoipSdk().accept(sipCallId, withVideo);
           if (callKitId != null) {
             await FlutterCallkitIncoming.setCallConnected(callKitId);
@@ -43,18 +52,34 @@ void registerIncomingSipFallbackCallKitListener() {
           break;
         case Event.actionCallDecline:
         case Event.actionCallTimeout:
-          await SiprixVoipSdk().reject(sipCallId, 486);
+          didUserHangUp = true;
+          if (sipCallId > 0) {
+            await SiprixVoipSdk().reject(sipCallId, 486);
+          }
           break;
         case Event.actionCallEnded:
-          await SiprixVoipSdk().bye(sipCallId);
+          didUserHangUp = true;
+          if (sipCallId > 0) {
+            await SiprixVoipSdk().bye(sipCallId);
+          }
           break;
         default:
           break;
       }
     } catch (_) {
       // Siprix may already have moved state; avoid surfacing to user.
+    } finally {
+      if (didUserHangUp && (sipCallId > 0 || (callKitId != null && callKitId.isNotEmpty))) {
+        onCallKitUserHangupSync?.call(sipCallId, callKitId);
+      }
     }
   });
+}
+
+/// Android: hide full-screen incoming call UI / notification for this plugin call id.
+Future<void> hideAndroidCallkitIncomingForId(String callKitUuid) {
+  return FlutterCallkitIncoming.hideCallkitIncoming(CallKitParams(id: callKitUuid))
+      .catchError((_) {});
 }
 
 /// Incoming SIP INVITE with no prior PushKit / Siprix CallKit match — show [flutter_callkit_incoming] UI.

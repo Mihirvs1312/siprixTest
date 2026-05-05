@@ -44,10 +44,29 @@ class AppCallsModel extends CallsModel {
 
   void _endCallKitForSipCallId(int sipCallId) {
     if (!Platform.isIOS) return;
-    // Remove every matcher for this SIP id (avoids duplicate rows after reconnects).
+    // End every CallKit row tied to this SIP call: primary matchers, duplicate UUID
+    // rows, and orphan PushKit/fallback rows (same push hint, sip_CallId still 0).
+    final hintsFromThisCall = <String>{};
+    final uuidsFromThisCall = <String>{};
+    for (final m in _callMatchers) {
+      if (m.sip_CallId != sipCallId) continue;
+      hintsFromThisCall.add(m.push_Hint);
+      if (m.callkit_CallUUID.isNotEmpty) {
+        uuidsFromThisCall.add(m.callkit_CallUUID);
+      }
+    }
+
     for (var i = _callMatchers.length - 1; i >= 0; i--) {
-      if (_callMatchers[i].sip_CallId != sipCallId) continue;
-      final String uuid = _callMatchers[i].callkit_CallUUID;
+      final m = _callMatchers[i];
+      final bool primary = m.sip_CallId == sipCallId;
+      final bool orphanSameHint =
+          m.sip_CallId == 0 && hintsFromThisCall.contains(m.push_Hint);
+      final bool sameCallKitUuid = m.callkit_CallUUID.isNotEmpty &&
+          uuidsFromThisCall.contains(m.callkit_CallUUID) &&
+          !(m.sip_CallId != 0 && m.sip_CallId != sipCallId);
+      if (!primary && !orphanSameHint && !sameCallKitUuid) continue;
+
+      final String uuid = m.callkit_CallUUID;
       _callMatchers.removeAt(i);
       if (uuid.isEmpty) continue;
       SiprixVoipSdk().endCallKitCall(uuid);
@@ -69,6 +88,41 @@ class AppCallsModel extends CallsModel {
     _pushNotifTimer?.cancel();
     _pushNotifTimer = null;
     FlutterCallkitIncoming.endAllCalls().catchError((_) {});
+  }
+
+  /// Resolve SIP call id from our PushKit / fallback bookkeeping (for CallKit events).
+  int? findSipCallIdByCallKitUuid(String? uuid) {
+    if (uuid == null || uuid.isEmpty) return null;
+    for (final m in _callMatchers) {
+      if (m.callkit_CallUUID == uuid) return m.sip_CallId;
+    }
+    return null;
+  }
+
+  /// After the user declines or ends from CallKit / VoIP incoming UI: tear down native + plugin UI,
+  /// keep [_callMatchers] in sync, and hide Android full-screen call notification.
+  void syncAfterCallKitUserHangup(int sipCallId, String? callKitUuid) {
+    if (Platform.isIOS) {
+      if (sipCallId > 0) {
+        _endCallKitForSipCallId(sipCallId);
+      } else if (callKitUuid != null && callKitUuid.isNotEmpty) {
+        for (var i = _callMatchers.length - 1; i >= 0; i--) {
+          if (_callMatchers[i].callkit_CallUUID != callKitUuid) continue;
+          _callMatchers.removeAt(i);
+        }
+      }
+      if (callKitUuid != null && callKitUuid.isNotEmpty) {
+        SiprixVoipSdk().endCallKitCall(callKitUuid);
+        FlutterCallkitIncoming.endCall(callKitUuid).catchError((_) {});
+      }
+      _resetIosCallKitWhenNoSipCalls();
+    } else if (Platform.isAndroid) {
+      if (callKitUuid != null && callKitUuid.isNotEmpty) {
+        FlutterCallkitIncoming.endCall(callKitUuid).catchError((_) {});
+        hideAndroidCallkitIncomingForId(callKitUuid);
+      }
+      FlutterCallkitIncoming.endAllCalls().catchError((_) {});
+    }
   }
 
   /// Accepts the first incoming call that is still ringing (list order).
@@ -213,6 +267,19 @@ class AppCallsModel extends CallsModel {
 
         //Update CallKit with 'callId'
         _callMatchers[index].sip_CallId = callId;
+        // Dismiss extra CallKit rows for the same push hint (e.g. double VoIP push / fallback + push).
+        for (var j = _callMatchers.length - 1; j >= 0; j--) {
+          if (j == index) continue;
+          final other = _callMatchers[j];
+          if (other.push_Hint != pushHint) continue;
+          if (other.sip_CallId != 0 && other.sip_CallId != callId) continue;
+          final String dupeUuid = other.callkit_CallUUID;
+          _callMatchers.removeAt(j);
+          if (j < index) index--;
+          if (dupeUuid.isEmpty) continue;
+          SiprixVoipSdk().endCallKitCall(dupeUuid);
+          FlutterCallkitIncoming.endCall(dupeUuid).catchError((_) {});
+        }
         SiprixVoipSdk().updateCallKitCallDetails(_callMatchers[index].callkit_CallUUID, callId, null, null, null);
       }
       else {

@@ -19,6 +19,7 @@ import 'package:siprix_voip_sdk/subscriptions_model.dart';
 import 'package:siprix_voip_sdk/siprix_voip_sdk.dart';
 
 import 'accouns_model_app.dart';
+import 'callkit_event_bridge.dart';
 import 'callkit_incoming_fallback.dart';
 import 'calls_model_app.dart';
 import 'sip_repository.dart';
@@ -57,6 +58,9 @@ void main() async {
   AppAccountsModel accountsModel = AppAccountsModel(logsModel);//List of accounts
   MessagesModel messagesModel    = MessagesModel(accountsModel, logsModel);//List of messages
   AppCallsModel callsModel       = AppCallsModel(accountsModel, logsModel, cdrsModel);//List of calls
+  onCallKitUserHangupSync =
+      (sipId, uuid) => callsModel.syncAfterCallKitUserHangup(sipId, uuid);
+  resolveSipCallIdForCallKitUuid = callsModel.findSipCallIdByCallKitUuid;
   SubscriptionsModel subscrModel = SubscriptionsModel(accountsModel, createSubscrFromJson, logsModel);//List of subscriptions
   //VuMeterModel vuModel         = VuMeterModel();
   //VoiceMailModel vmModel       = VoiceMailModel(logsModel);
