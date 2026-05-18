@@ -38,7 +38,8 @@ class AppAccountsModel extends AccountsModel {
         '${h(b[10])}${h(b[11])}${h(b[12])}${h(b[13])}${h(b[14])}${h(b[15])}';
   }
 
-  Future<String> _getOrCreateDeviceId() async {
+  /// Same id as SIP `Contact` / push registration (`device_id` in API payloads).
+  static Future<String> getOrCreateDeviceId() async {
     final prefs = await SharedPreferences.getInstance();
     final existing = prefs.getString(_deviceIdPrefsKey);
     if (existing != null && existing.isNotEmpty) return existing;
@@ -46,6 +47,8 @@ class AppAccountsModel extends AccountsModel {
     await prefs.setString(_deviceIdPrefsKey, id);
     return id;
   }
+
+  Future<String> _getOrCreateDeviceId() => getOrCreateDeviceId();
 
   Future<void> _saveTokenToBackend(String extension) async {
     try {
@@ -61,9 +64,11 @@ class AppAccountsModel extends AccountsModel {
       }
       if (token == null) return;
 
+      final deviceId = await _getOrCreateDeviceId();
       final result = await SipRepository.saveToken({
         'extension': extension,
         'device_type': _deviceType,
+        'device_id': deviceId,
         'token': token,
       });
       if (result.status != 'ok') {
@@ -72,6 +77,29 @@ class AppAccountsModel extends AccountsModel {
     } catch (e) {
       _logs?.print('Save token failed: $e');
     }
+  }
+
+  Future<void> _deleteTokenFromBackend(String extension) async {
+    try {
+      if (extension.isEmpty) return;
+      final deviceId = await _getOrCreateDeviceId();
+      final result = await SipRepository.deleteToken({
+        'extension': extension,
+        'device_id': deviceId,
+      });
+      if (result.status != 'ok') {
+        _logs?.print('Delete token API: ${result.message ?? result.status}');
+      }
+    } catch (e) {
+      _logs?.print('Delete token failed: $e');
+    }
+  }
+
+  @override
+  Future<void> deleteAccount(int index) async {
+    final ext = this[index].sipExtension;
+    await _deleteTokenFromBackend(ext);
+    await super.deleteAccount(index);
   }
 
   @override
@@ -87,8 +115,8 @@ class AppAccountsModel extends AccountsModel {
 
     final deviceId = await _getOrCreateDeviceId();
     acc.xContactUriParams = {
-      'device_id': deviceId,
-      'device_type': _deviceType,
+      'pn-prid': deviceId,
+      'pn-provider': _deviceType,
     };
 
     //When resolved - put token into SIP REGISTER request

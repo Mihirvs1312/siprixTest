@@ -46,4 +46,31 @@ class SipRepository {
       );
     }
   }
+
+  static Future<ApiResponse<void>> deleteToken(Object data) async {
+    try {
+      final response = await _dio.delete(
+        '${AppSettings.baseUrlSip}/notification/delete-token',
+        data: data,
+      );
+      final raw = response.data;
+      if (raw is! Map) {
+        return ApiResponse<void>(status: 'error', message: 'Invalid response');
+      }
+      final apiResponse =
+      ApiResponse<void>.fromMap(Map<String, dynamic>.from(raw));
+      if (apiResponse.status == 'ok') {
+        return apiResponse;
+      }
+      return ApiResponse<void>(
+        status: 'error',
+        message: apiResponse.message,
+      );
+    } on DioException catch (e) {
+      return ApiResponse<void>(
+        status: 'error',
+        message: e.message ?? 'Network error',
+      );
+    }
+  }
 }

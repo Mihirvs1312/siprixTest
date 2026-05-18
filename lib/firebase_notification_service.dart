@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
@@ -6,11 +8,9 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:siprix_voip_sdk/accounts_model.dart';
-import 'package:siprix_voip_sdk/logs_model.dart';
-import 'package:siprix_voip_sdk/siprix_voip_sdk.dart';
-
+import 'accouns_model_app.dart';
 import 'firebase_options.dart';
+import 'siprix_app_init.dart';
 
 const String kCallChannelId = 'incoming_call_channel';
 const String kCallChannelName = 'Incoming Calls';
@@ -53,25 +53,40 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+    if (Platform.isIOS) {
+      await Firebase.initializeApp();
+    } else {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    }
   } catch (_) {
     // Already initialized by google-services.json / native plugin
   }
 
-  debugPrint('Background FCM message: ${message.messageId} data: ${message.data}');
+  debugPrint(
+      'Background FCM message: ${message.messageId} data: ${message.data}');
 
   final data = message.data;
   final bool isCallPush =
       data.containsKey('type') && data['type'] == 'incoming_call';
 
-  // if (isCallPush) {
-    await _handleBackgroundCallPush(data);
+  try {
+    await initializeSiprixApp();
+    final prefs = await SharedPreferences.getInstance();
+    final accJsonStr = prefs.getString('accounts') ?? '';
+    if (accJsonStr.isNotEmpty) {
+      final tmpAccsModel = AppAccountsModel();
+      await tmpAccsModel.loadFromJson(accJsonStr);
+      await tmpAccsModel.refreshRegistration();
+    }
+  } catch (e, st) {
+    debugPrint('Background Siprix wake error: $e\n$st');
+  }
+
+  if (Platform.isAndroid && isCallPush) {
     await showFullScreenNotification(message);
-  // } else if (message.notification != null) {
-    // await showFullScreenNotification(message);
-  // }
+  }
 }
 
 /// Shows a high-priority full-screen intent notification. Safe to call from the
@@ -123,30 +138,6 @@ Future<void> showFullScreenNotification(RemoteMessage message) async {
     body,
     platformDetails,
   );
-}
-
-Future<void> _handleBackgroundCallPush(Map<String, dynamic> data) async {
-  debugPrint('Background call push received: $data');
-
-  try {
-    final ini = InitData()
-      ..license = ''
-      ..logLevelFile = LogLevel.debug
-      ..logLevelIde = LogLevel.info
-      ..useDnsSrv = false;
-
-    await SiprixVoipSdk().initialize(ini);
-
-    final prefs = await SharedPreferences.getInstance();
-    final accJsonStr = prefs.getString('sipAccount') ?? '';
-    if (accJsonStr.isNotEmpty) {
-      final acc = AccountModel.fromJson(jsonDecode(accJsonStr));
-      await SiprixVoipSdk().addAccount(acc);
-      debugPrint('Background: Siprix initialized and account loaded for push wakeup');
-    }
-  } catch (e) {
-    debugPrint('Background Siprix init error: $e');
-  }
 }
 
 class FirebaseNotificationService {

@@ -9,7 +9,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 //import 'package:firebase_core/firebase_core.dart';
 //import 'package:firebase_messaging/firebase_messaging.dart';
 
-import 'package:siprix_voip_sdk/accounts_model.dart';
 import 'package:siprix_voip_sdk/messages_model.dart';
 import 'package:siprix_voip_sdk/network_model.dart';
 import 'package:siprix_voip_sdk/cdrs_model.dart';
@@ -32,8 +31,9 @@ import 'settings.dart';
 import 'home.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'firebase_notification_service.dart';
 import 'firebase_options.dart';
-import 'voip_ios_config.dart';
+import 'siprix_app_init.dart';
 //const FirebaseOptions gFCMOptions = FirebaseOptions(
 //      apiKey: '...',            //Copy from `google-services.json` - `client.api_key.current_key`
 //      appId: '...',             //Copy from `google-services.json` - `client.client_info.mobilesdk_app_id`
@@ -65,25 +65,7 @@ void main() async {
   //VuMeterModel vuModel         = VuMeterModel();
   //VoiceMailModel vmModel       = VoiceMailModel(logsModel);
 
-  try {
-    // iOS: use GoogleService-Info.plist (Dart options still have iOS placeholders).
-    if (Platform.isIOS) {
-      await Firebase.initializeApp();
-    } else {
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
-    }
-  } catch (_) {
-    // Already initialized by google-services.json / native plugin
-  }
-
-
-  // if (Platform.isAndroid) {
-    // await setupAndroidCallNotificationChannel();
-  // }
-
-  // FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  // Firebase is initialized in [_initializeFCM] before [runApp].
 
   //Run app
   runApp(
@@ -105,43 +87,24 @@ void main() async {
 
 
 Future<void> _initializeFCM() async {
-  if(Platform.isAndroid) {
-    WidgetsFlutterBinding.ensureInitialized();
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  if (!Platform.isAndroid && !Platform.isIOS) {
+    return;
   }
-}
 
-@pragma('vm:entry-point')
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-
-  //!!! Method is working in the background isolate!
-  //!!! At this moment Activity may not exist or whole App could be completely stopped
-  //!!! Code below initializes Siprix, adds saved accounts and refreshes registration (makes app ready to receive incoming call)
-
-  debugPrint("[!!!] Handling a background message id:'${message.messageId}' data:'${message.data}'");
-
-  try{
-    debugPrint("Initialize siprix by push notif");
-    // Must complete before addAccount/registerAccount — otherwise channel calls race
-    // and the native plugin can reject invocations (e.g. "Bad argument. Map with fields expected").
-    await _MyAppState._initializeSiprix();
-
-    debugPrint("Read and add accounts by push notif");
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String accJsonStr = prefs.getString('accounts') ?? '';
-    if(accJsonStr.isNotEmpty) {
-      AppAccountsModel tmpAccsModel = AppAccountsModel();
-      await tmpAccsModel.loadFromJson(accJsonStr);
-      await tmpAccsModel.refreshRegistration();
+  try {
+    if (Platform.isIOS) {
+      await Firebase.initializeApp();
+    } else {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
     }
-  } on Exception catch (err) {
-      debugPrint('Error: ${err.toString()}');
+  } catch (_) {
+    // Already initialized by google-services.json / native plugin
   }
-}
 
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+}
 
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
@@ -205,10 +168,39 @@ class _MyAppState extends State<MyApp> {
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
     final logs = context.read<LogsModel>();
-    await _initializeSiprix(logs);
+    await initializeSiprixApp(logs: logs);
+    if (!mounted) return;
+    await _configureFirebaseNotifications();
     if (!mounted) return;
     widget.writeRingtoneAsset(); // uses Siprix homeFolder
     _readSavedState();
+  }
+
+  Future<void> _configureFirebaseNotifications() async {
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      return;
+    }
+
+    await FirebaseNotificationService.instance.initialize();
+
+    if (Platform.isAndroid) {
+      await setupAndroidCallNotificationChannel();
+    }
+
+    final calls = context.read<AppCallsModel>();
+    FirebaseNotificationService.instance.onIncomingCallPush = (data) {
+      debugPrint('[FCM] foreground incoming_call push: $data');
+    };
+    FirebaseNotificationService.instance.onCallAccepted = (_) async {
+      await calls.acceptFirstRingingIncoming();
+    };
+    FirebaseNotificationService.instance.onCallRejected = (_) async {
+      await calls.rejectAllRingingIncoming();
+      await FirebaseNotificationService.instance.cancelCallNotification();
+    };
+    FirebaseNotificationService.instance.onNotificationTapped = (data) {
+      debugPrint('[FCM] notification opened (non-call): $data');
+    };
   }
 
   @override
@@ -241,60 +233,6 @@ class _MyAppState extends State<MyApp> {
         useMaterial3: true,
       ),
     );
-  }
-
-  static Future<void> _initializeSiprix([LogsModel? logsModel]) async {
-    debugPrint('Initialize siprix');
-    InitData iniData = InitData();
-    iniData.logLevelFile = LogLevel.debug;
-    iniData.logLevelIde = LogLevel.info;
-
-    //- Put here license key after purchase, for trial evaluation key is not required -//
-    iniData.license  = "LicensedTo[DeepFoodsInc]_Platforms[WIN_ANDR_IOS_OSX_LIN]_Features[V_MC_MA_MSG]_SupportTill[20260718]_UpdatesTill[20260718]_Key[MC0CFEJxwm005R6H9wtzpH3irCTyGx3rAhUAwjVi3+UwgFgmA1YtHkRqjH85NuA=]";
-
-    //- Uncomment if required -//
-    //iniData.enableVUmeter = true;
-    //iniData.singleCallMode = false;
-    //iniData.tlsVerifyServer = false;
-    if(Platform.isIOS) {
-     iniData.enableCallKit = true;
-     // Siprix iOS: when enablePushKit is true, CallKit incoming UI is only shown from a *VoIP push*
-     // (onPushIncoming). Plain SIP INVITE does NOT call reportNewIncomingCall — so you get
-     // onIncomingSip in Dart but no lock-screen CallKit / no ring unless the server sends Apple
-     // VoIP push for every call. Set false to show CallKit from the INVITE itself (SIP must
-     // reach the app while registered). Set true again when your PBX sends PushKit before/during ring.
-     // Use SIP-driven CallKit for reliable lock-screen answer flow.
-     // Set true only when server sends proper iOS VoIP pushes for each call.
-     iniData.enablePushKit = kIosUsePushKit;
-     iniData.unregOnDestroy = false;
-     debugPrint('[PushKit] iOS init: enablePushKit=${iniData.enablePushKit} enableCallKit=${iniData.enableCallKit}');
-    }
-    if(Platform.isAndroid) {
-     iniData.listenTelState = true;
-     iniData.listenVolChange = true;
-    //  iniData.serviceClassName = "com.app.teamlocus_sip.MyNotifService";
-    }
-    await SiprixVoipSdk().initialize(iniData, logsModel);
-    if (Platform.isIOS && kIosUsePushKit) {
-      try {
-        final token = await SiprixVoipSdk().getPushKitToken();
-        debugPrint('[PushKit] Connected/initialized. token: ${token ?? "null"}');
-        print('[PushKit] Connected/initialized. token: ${token ?? "null"}');
-      } catch (e) {
-        debugPrint('[PushKit] Initialized, but token fetch failed: $e');
-        print('[PushKit] Initialized, but token fetch failed: $e');
-      }
-    }
-
-    //Set video params (if required)
-    //VideoData vdoData = VideoData();
-    //vdoData.noCameraImgPath = await MyApp.writeAssetAndGetFilePath("noCamera.jpg");
-    //vdoData.bitrateKbps = 800;
-    //SiprixVoipSdk().setVideoParams(vdoData);
-
-    //Check the version
-    //String? version = await SiprixVoipSdk().version();
-    //debugPrint("Siprix version: $version");
   }
 
   void _readSavedState() {

@@ -10,6 +10,7 @@ import 'package:siprix_voip_sdk/calls_model.dart';
 import 'package:siprix_voip_sdk/cdrs_model.dart';
 import 'package:siprix_voip_sdk/siprix_voip_sdk.dart';
 
+import 'call_event_log.dart';
 import 'callkit_incoming_fallback.dart';
 import 'voip_ios_config.dart';
 
@@ -41,6 +42,37 @@ class AppCallsModel extends CallsModel {
   final ILogsModel? _logs;
   final List<CallMatcher> _callMatchers=[];//iOS PushKit specific impl
   Timer? _pushNotifTimer;
+  final Set<int> _callStartLogged = {};
+
+  CallModel? _callBySipId(int sipCallId) {
+    for (final c in this) {
+      if (c.myCallId == sipCallId) return c;
+    }
+    return null;
+  }
+
+  Future<void> _emitCallLog({
+    required String type,
+    required int sipCallId,
+    required String callerName,
+    required String callerNumber,
+    required String receiverNumber,
+  }) async {
+    try {
+      final payload = await CallEventLog.build(
+        type: type,
+        sipCallId: sipCallId,
+        callerName: callerName,
+        callerNumber: callerNumber,
+        receiverNumber: receiverNumber,
+      );
+      final line = CallEventLog.toPrettyJson(payload);
+      _logs?.print('[CallLog]\n$line');
+      debugPrint('[CallLog]\n$line');
+    } catch (e, st) {
+      _logs?.print('CallLog failed: $e\n$st');
+    }
+  }
 
   void _endCallKitForSipCallId(int sipCallId) {
     if (!Platform.isIOS) return;
@@ -235,8 +267,58 @@ class AppCallsModel extends CallsModel {
   }
 
   @override
+  void onProceeding(int callId, String response) {
+    super.onProceeding(callId, response);
+    final c = _callBySipId(callId);
+    if (c == null || c.isIncoming) return;
+    if (_callStartLogged.contains(callId)) return;
+    _callStartLogged.add(callId);
+    final accExt = CallsModel.parseExt(c.accUri);
+    final callerName =
+        c.displName.isNotEmpty ? c.displName : (accExt.isNotEmpty ? accExt : c.remoteExt);
+    unawaited(_emitCallLog(
+      type: 'start',
+      sipCallId: callId,
+      callerName: callerName,
+      callerNumber: accExt,
+      receiverNumber: c.remoteExt,
+    ));
+  }
+
+  @override
+  void onConnected(int callId, String from, String to, bool withVideo) {
+    final disp = CallsModel.parseDisplayName(from);
+    final callerNum = CallsModel.parseExt(from);
+    final recvNum = CallsModel.parseExt(to);
+    final callerName = disp.isNotEmpty ? disp : callerNum;
+    unawaited(_emitCallLog(
+      type: 'connected',
+      sipCallId: callId,
+      callerName: callerName,
+      callerNumber: callerNum,
+      receiverNumber: recvNum,
+    ));
+    super.onConnected(callId, from, to, withVideo);
+  }
+
+  @override
   void onIncomingSip(int callId, int accId, bool withVideo, String hdrFrom, String hdrTo) async {
     super.onIncomingSip(callId, accId, withVideo, hdrFrom, hdrTo);
+
+    if (!_callStartLogged.contains(callId)) {
+      _callStartLogged.add(callId);
+      final callerNum = CallsModel.parseExt(hdrFrom);
+      final recvNum = CallsModel.parseExt(hdrTo);
+      final disp = CallsModel.parseDisplayName(hdrFrom);
+      final callerName = disp.isNotEmpty ? disp : callerNum;
+      unawaited(_emitCallLog(
+        type: 'start',
+        sipCallId: callId,
+        callerName: callerName,
+        callerNumber: callerNum,
+        receiverNumber: recvNum,
+      ));
+    }
 
     try {
       final String? fullSip =
@@ -302,6 +384,32 @@ class AppCallsModel extends CallsModel {
 
   @override
   void onTerminated(int callId, int statusCode) {
+    final c = _callBySipId(callId);
+    if (c != null) {
+      late final String callerNum;
+      late final String receiverNum;
+      late final String callerName;
+      if (c.isIncoming) {
+        callerNum = c.remoteExt;
+        receiverNum = CallsModel.parseExt(c.accUri);
+        callerName =
+            c.displName.isNotEmpty ? c.displName : (callerNum.isNotEmpty ? callerNum : receiverNum);
+      } else {
+        callerNum = CallsModel.parseExt(c.accUri);
+        receiverNum = c.remoteExt;
+        callerName =
+            c.displName.isNotEmpty ? c.displName : (callerNum.isNotEmpty ? callerNum : receiverNum);
+      }
+      unawaited(_emitCallLog(
+        type: 'end',
+        sipCallId: callId,
+        callerName: callerName,
+        callerNumber: callerNum,
+        receiverNumber: receiverNum,
+      ));
+    }
+    _callStartLogged.remove(callId);
+
     super.onTerminated(callId, statusCode);
 
     if (Platform.isIOS) {
