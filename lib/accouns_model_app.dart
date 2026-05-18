@@ -105,11 +105,16 @@ class AppAccountsModel extends AccountsModel {
   @override
   Future<void> addAccount(AccountModel acc, {bool saveChanges=true}) async {
     String? token;
-    if(Platform.isIOS) {
-      token = await SiprixVoipSdk().getPushKitToken();//iOS - get PushKit VoIP token
-      print('[PushKit] addAccount fetched token: ${token ?? "null"}');
-      _logs?.print('[PushKit] addAccount fetched token: ${token ?? "null"}');
-    }else if(Platform.isAndroid) {
+    if (Platform.isIOS) {
+      try {
+        token = await SiprixVoipSdk().getPushKitToken();
+        print('[PushKit] addAccount fetched token: ${token ?? "null"}');
+        _logs?.print('[PushKit] addAccount fetched token: ${token ?? "null"}');
+      } catch (e) {
+        _logs?.print(
+            '[PushKit] addAccount getPushKitToken failed (account still saved): $e');
+      }
+    } else if (Platform.isAndroid) {
      // token = await FirebaseMessaging.instance.getToken();//Android - get Firebase token
     }
 

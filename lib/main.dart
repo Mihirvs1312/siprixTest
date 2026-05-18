@@ -147,7 +147,9 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  late final AppLifecycleListener? _listener;
+  /// Android only; must stay nullable without [late] — on iOS we never assign and
+  /// [late final] would throw on first read in [dispose].
+  AppLifecycleListener? _listener;
 
   @override
   void initState() {
@@ -170,37 +172,55 @@ class _MyAppState extends State<MyApp> {
     final logs = context.read<LogsModel>();
     await initializeSiprixApp(logs: logs);
     if (!mounted) return;
-    await _configureFirebaseNotifications();
-    if (!mounted) return;
+    // Load prefs and wire [onSaveChanges] immediately after Siprix — same order as before
+    // Firebase notification setup was inserted here earlier; if it throws or hangs on iOS,
+    // [_readSavedState] never ran so account saves did not persist.
     widget.writeRingtoneAsset(); // uses Siprix homeFolder
-    _readSavedState();
+    await _readSavedState();
+    if (!mounted) return;
+    await _configureFirebaseNotificationsSafely();
   }
 
-  Future<void> _configureFirebaseNotifications() async {
+  /// Wire [onSaveChanges] before any async prefs work so a fast "add account"
+  /// cannot run while callbacks are still null.
+  void _wireModelPersistence() {
+    if (!mounted) return;
+    context.read<AppAccountsModel>().onSaveChanges = _saveAccountChanges;
+    context.read<SubscriptionsModel>().onSaveChanges = _saveSubscriptionChanges;
+    context.read<MessagesModel>().onSaveChanges = _saveMessagesChanges;
+    context.read<CdrsModel>().onSaveChanges = _saveCdrsChanges;
+  }
+
+  Future<void> _configureFirebaseNotificationsSafely() async {
     if (!Platform.isAndroid && !Platform.isIOS) {
       return;
     }
 
-    await FirebaseNotificationService.instance.initialize();
+    try {
+      await FirebaseNotificationService.instance.initialize();
 
-    if (Platform.isAndroid) {
-      await setupAndroidCallNotificationChannel();
+      if (Platform.isAndroid) {
+        await setupAndroidCallNotificationChannel();
+      }
+
+      if (!mounted) return;
+      final calls = context.read<AppCallsModel>();
+      FirebaseNotificationService.instance.onIncomingCallPush = (data) {
+        debugPrint('[FCM] foreground incoming_call push: $data');
+      };
+      FirebaseNotificationService.instance.onCallAccepted = (_) async {
+        await calls.acceptFirstRingingIncoming();
+      };
+      FirebaseNotificationService.instance.onCallRejected = (_) async {
+        await calls.rejectAllRingingIncoming();
+        await FirebaseNotificationService.instance.cancelCallNotification();
+      };
+      FirebaseNotificationService.instance.onNotificationTapped = (data) {
+        debugPrint('[FCM] notification opened (non-call): $data');
+      };
+    } catch (e, st) {
+      debugPrint('Firebase notifications setup failed (non-fatal): $e\n$st');
     }
-
-    final calls = context.read<AppCallsModel>();
-    FirebaseNotificationService.instance.onIncomingCallPush = (data) {
-      debugPrint('[FCM] foreground incoming_call push: $data');
-    };
-    FirebaseNotificationService.instance.onCallAccepted = (_) async {
-      await calls.acceptFirstRingingIncoming();
-    };
-    FirebaseNotificationService.instance.onCallRejected = (_) async {
-      await calls.rejectAllRingingIncoming();
-      await FirebaseNotificationService.instance.cancelCallNotification();
-    };
-    FirebaseNotificationService.instance.onNotificationTapped = (data) {
-      debugPrint('[FCM] notification opened (non-call): $data');
-    };
   }
 
   @override
@@ -235,33 +255,25 @@ class _MyAppState extends State<MyApp> {
     );
   }
 
-  void _readSavedState() {
+  Future<void> _readSavedState() async {
     debugPrint('_readSavedState');
-    SharedPreferences.getInstance().then((prefs) {
-      String accJsonStr = prefs.getString('accounts') ?? '';
-      String subsJsonStr = prefs.getString('subscriptions') ?? '';
-      String cdrsJsonStr = prefs.getString('cdrs') ?? '';
-      String msgsJsonStr = prefs.getString('msgs') ?? '';
-      _loadModels(accJsonStr, cdrsJsonStr, subsJsonStr, msgsJsonStr);
-    });
+    _wireModelPersistence();
+    final prefs = await SharedPreferences.getInstance();
+    String accJsonStr = prefs.getString('accounts') ?? '';
+    String subsJsonStr = prefs.getString('subscriptions') ?? '';
+    String cdrsJsonStr = prefs.getString('cdrs') ?? '';
+    String msgsJsonStr = prefs.getString('msgs') ?? '';
+    await prefs.reload();
+    accJsonStr = prefs.getString('accounts') ?? accJsonStr;
+    await _loadModels(accJsonStr, cdrsJsonStr, subsJsonStr, msgsJsonStr);
   }
 
-  void _loadModels(String accJsonStr, String cdrsJsonStr,
-                  String subsJsonStr, String msgsJsonStr) async {
-    //Accounts
+  Future<void> _loadModels(String accJsonStr, String cdrsJsonStr,
+      String subsJsonStr, String msgsJsonStr) async {
     AppAccountsModel accs = context.read<AppAccountsModel>();
-    accs.onSaveChanges = _saveAccountChanges;
-
-    //Subscriptions
     SubscriptionsModel subs = context.read<SubscriptionsModel>();
-    subs.onSaveChanges = _saveSubscriptionChanges;
-
     MessagesModel msgs = context.read<MessagesModel>();
-    msgs.onSaveChanges = _saveMessagesChanges;
-
-    //CDRs (Call Details Records)
     CdrsModel cdrs = context.read<CdrsModel>();
-    cdrs.onSaveChanges = _saveCdrsChanges;
 
     //Load messages, than accounts, then other models
     msgs.loadFromJson(msgsJsonStr);
@@ -277,26 +289,26 @@ class _MyAppState extends State<MyApp> {
   }
 
   void _saveCdrsChanges(String cdrsJsonStr) {
-    SharedPreferences.getInstance().then((prefs) {
-      prefs.setString('cdrs', cdrsJsonStr);
+    SharedPreferences.getInstance().then((prefs) async {
+      await prefs.setString('cdrs', cdrsJsonStr);
     });
   }
 
   void _saveAccountChanges(String accountsJsonStr) {
-    SharedPreferences.getInstance().then((prefs) {
-      prefs.setString('accounts', accountsJsonStr);
+    SharedPreferences.getInstance().then((prefs) async {
+      await prefs.setString('accounts', accountsJsonStr);
     });
   }
 
   void _saveSubscriptionChanges(String subscrJsonStr) {
-    SharedPreferences.getInstance().then((prefs) {
-      prefs.setString('subscriptions', subscrJsonStr);
+    SharedPreferences.getInstance().then((prefs) async {
+      await prefs.setString('subscriptions', subscrJsonStr);
     });
   }
 
   void _saveMessagesChanges(String msgsJsonStr) {
-    SharedPreferences.getInstance().then((prefs) {
-      prefs.setString('msgs', msgsJsonStr);
+    SharedPreferences.getInstance().then((prefs) async {
+      await prefs.setString('msgs', msgsJsonStr);
     });
   }
 
