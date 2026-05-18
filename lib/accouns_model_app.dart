@@ -1,8 +1,8 @@
 import 'dart:io';
-import 'dart:math';
 
 //import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/services.dart';
+import 'package:mobile_device_identifier/mobile_device_identifier.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:siprix_voip_sdk/accounts_model.dart';
 import 'package:siprix_voip_sdk/siprix_voip_sdk.dart';
@@ -23,29 +23,25 @@ class AppAccountsModel extends AccountsModel {
     return Platform.operatingSystem;
   }
 
-  /// RFC 4122 version 4 UUID (random), 128 bits from [Random.secure].
-  static String _newDeviceId() {
-    final r = Random.secure();
-    final b = List<int>.generate(16, (_) => r.nextInt(256));
-    b[6] = (b[6] & 0x0f) | 0x40;
-    b[8] = (b[8] & 0x3f) | 0x80;
-    const hex = '0123456789abcdef';
-    String h(int x) => '${hex[x >> 4]}${hex[x & 0xf]}';
-    return '${h(b[0])}${h(b[1])}${h(b[2])}${h(b[3])}-'
-        '${h(b[4])}${h(b[5])}-'
-        '${h(b[6])}${h(b[7])}-'
-        '${h(b[8])}${h(b[9])}-'
-        '${h(b[10])}${h(b[11])}${h(b[12])}${h(b[13])}${h(b[14])}${h(b[15])}';
-  }
-
   /// Same id as SIP `Contact` / push registration (`device_id` in API payloads).
+  ///
+  /// Uses [MobileDeviceIdentifier] on Android/iOS (persisted across reinstalls per
+  /// the plugin). Replaces any previously stored random UUID on first successful read.
   static Future<String> getOrCreateDeviceId() async {
     final prefs = await SharedPreferences.getInstance();
+    if (Platform.isAndroid || Platform.isIOS) {
+      final id = await MobileDeviceIdentifier().getDeviceId();
+      if (id != null && id.isNotEmpty) {
+        await prefs.setString(_deviceIdPrefsKey, id);
+        return id;
+      }
+      throw StateError('Could not obtain mobile device identifier.');
+    }
     final existing = prefs.getString(_deviceIdPrefsKey);
     if (existing != null && existing.isNotEmpty) return existing;
-    final id = _newDeviceId();
-    await prefs.setString(_deviceIdPrefsKey, id);
-    return id;
+    throw UnsupportedError(
+      'getOrCreateDeviceId is only supported on Android and iOS.',
+    );
   }
 
   Future<String> _getOrCreateDeviceId() => getOrCreateDeviceId();
