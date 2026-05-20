@@ -114,11 +114,11 @@ class AppAccountsModel extends AccountsModel {
      // token = await FirebaseMessaging.instance.getToken();//Android - get Firebase token
     }
 
-    final deviceId = await _getOrCreateDeviceId();
-    acc.xContactUriParams = {
-      'pn-prid': deviceId,
-      'pn-provider': _deviceType,
-    };
+    // final deviceId = await _getOrCreateDeviceId();
+    // acc.xContactUriParams = {
+    //   'pn-prid': deviceId,
+    //   'pn-provider': _deviceType,
+    // };
 
     //When resolved - put token into SIP REGISTER request
     if (token != null) {
