@@ -114,19 +114,36 @@ class AppAccountsModel extends AccountsModel {
      // token = await FirebaseMessaging.instance.getToken();//Android - get Firebase token
     }
 
-    // final deviceId = await _getOrCreateDeviceId();
-    // acc.xContactUriParams = {
-    //   'pn-prid': deviceId,
-    //   'pn-provider': _deviceType,
-    // };
+    // RFC 8599 Contact params for push correlation (pn-prid / pn-provider). Values must match
+    // what YOUR SIP server expects; many stacks use `apns`/`fcm` instead of `ios`/`android`.
+    //
+    // IMPORTANT: `_getOrCreateDeviceId()` must not abort registration — if it throws (simulator,
+    // permission, plugin failure), skipping params still lets the account register.
+    try {
+      if (Platform.isIOS || Platform.isAndroid) {
+        final deviceId = await _getOrCreateDeviceId();
+        acc.xContactUriParams = {
+          'pn-prid': deviceId,
+          // Must match what your SIP/PBX expects (RFC 8599 often uses apns/fcm).
+          'pn-provider': _deviceType,
+        };
+      }
+    } catch (e, st) {
+      _logs?.print(
+          'xContactUriParams skipped (registration continues): $e\n$st');
+    }
 
     //When resolved - put token into SIP REGISTER request
     if (token != null) {
       _logs?.print('AddAccount with push token: $token');
       acc.xheaders = {'X-Token': token};
     }
+    // [AccountsModel.loadFromJson] replays each saved account via [addAccount(...,
+    // saveChanges: false)]. Only the real "Add account" flow uses saveChanges:true,
+    // so we register the push token with the backend once per user add — not on every
+    // cold start / push wake / reload.
     final ext = acc.sipExtension;
-    if (ext.isNotEmpty) {
+    if (saveChanges && ext.isNotEmpty) {
       await _saveTokenToBackend(ext);
     }
     await super.addAccount(acc, saveChanges: saveChanges);
