@@ -185,6 +185,8 @@ class FirebaseNotificationService {
   void Function(Map<String, dynamic> data)? onCallAccepted;
   void Function(Map<String, dynamic> data)? onCallRejected;
   void Function(Map<String, dynamic> data)? onIncomingCallPush;
+  /// Fired for every FCM message while the app is in the foreground (e.g. refresh SIP REGISTER).
+  void Function(Map<String, dynamic> data)? onForegroundMessage;
 
   // ---- Initialisation -------------------------------------------------------
 
@@ -295,6 +297,7 @@ class FirebaseNotificationService {
       debugPrint('Foreground message: ${message.messageId}');
 
       final data = message.data;
+      onForegroundMessage?.call(data);
       final bool isCallPush =
           data.containsKey('type') && data['type'] == 'incoming_call';
 

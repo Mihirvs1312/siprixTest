@@ -127,6 +127,8 @@ class AppAccountsModel extends AccountsModel {
           // Must match what your SIP/PBX expects (RFC 8599 often uses apns/fcm).
           'pn-provider': _deviceType,
         };
+        _logs?.print(
+            'prid: $deviceId');
       }
     } catch (e, st) {
       _logs?.print(

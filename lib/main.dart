@@ -241,6 +241,18 @@ class _MyAppState extends State<MyApp> {
 
       if (!mounted) return;
       final calls = context.read<AppCallsModel>();
+      final accounts = context.read<AppAccountsModel>();
+      FirebaseNotificationService.instance.onForegroundMessage = (data) async {
+        debugPrint('[FCM] foreground push: $data');
+        if (!mounted) return;
+        try {
+          await accounts.refreshRegistration();
+          debugPrint('[FCM] SIP registration refreshed after foreground push');
+        } catch (e, st) {
+          debugPrint(
+              '[FCM] refreshRegistration after foreground push failed: $e\n$st');
+        }
+      };
       FirebaseNotificationService.instance.onIncomingCallPush = (data) {
         debugPrint('[FCM] foreground incoming_call push: $data');
       };
@@ -356,6 +368,7 @@ class _MyAppState extends State<MyApp> {
     await prefs.reload();
     accJsonStr = prefs.getString('accounts') ?? accJsonStr;
     await _loadModels(accJsonStr, cdrsJsonStr, subsJsonStr, msgsJsonStr);
+    await _configureFirebaseNotificationsSafely();
   }
 
   Future<void> _loadModels(String accJsonStr, String cdrsJsonStr,
