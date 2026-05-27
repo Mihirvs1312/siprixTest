@@ -147,12 +147,127 @@ class AppCallsModel extends CallsModel {
     }
   }
 
-   /// Handle iOS Pushkit notification received by library (parse payload, update CallKit window, store data from push payload)
+  /// `type` values the backend sends for a real incoming ring. Any other
+  /// recognised end/cancel/missed marker is dismissed in [onIncomingPush].
+  static const Set<String> _kRingingPushTypes = <String>{
+    'start', 'incoming', 'invite', 'ring', 'ringing', 'call',
+  };
+  static const Set<String> _kEndPushTypes = <String>{
+    'end', 'ended', 'end_call', 'endcall',
+    'cancel', 'cancelled', 'canceled', 'cancel_call',
+    'missed', 'missed_call', 'miss',
+    'bye', 'terminated', 'terminate',
+    'hangup', 'hang_up',
+    'reject', 'rejected', 'decline', 'declined',
+  };
+
+  bool _isNonRingingPush(Map<String, dynamic> payload) {
+    String norm(dynamic v) => v?.toString().trim().toLowerCase() ?? '';
+
+    final candidates = <String>[
+      norm(payload['type']),
+      norm(payload['event']),
+      norm(payload['action']),
+      norm(payload['state']),
+      norm(payload['call_status']),
+      norm(payload['callStatus']),
+    ];
+
+    Map<String, dynamic>? nested;
+    final nestedRaw = payload['data'] ?? payload['payload'];
+    if (nestedRaw is Map) {
+      nested = Map<String, dynamic>.from(nestedRaw);
+      candidates.addAll([
+        norm(nested['type']),
+        norm(nested['event']),
+        norm(nested['action']),
+        norm(nested['state']),
+      ]);
+    }
+
+    try {
+      final aps = payload['aps'];
+      if (aps is Map) {
+        candidates.add(norm(aps['alert']));
+      }
+    } catch (_) {}
+
+    for (final c in candidates) {
+      if (c.isEmpty) continue;
+      if (_kRingingPushTypes.contains(c)) return false;
+      if (_kEndPushTypes.contains(c)) return true;
+    }
+
+    bool truthy(dynamic v) =>
+        v == true || v == 1 || norm(v) == 'true' || norm(v) == '1';
+    if (truthy(payload['endCall']) ||
+        truthy(payload['end_call']) ||
+        truthy(payload['isEnd']) ||
+        truthy(payload['is_end']) ||
+        truthy(payload['ended']) ||
+        truthy(payload['cancelled']) ||
+        truthy(payload['canceled'])) {
+      return true;
+    }
+    if (payload['incoming'] == false) return true;
+
+    return false;
+  }
+
+  void _dismissNonRingingPush(
+      String callkit_CallUUID, Map<String, dynamic> pushPayload) {
+    if (callkit_CallUUID.isNotEmpty) {
+      SiprixVoipSdk().endCallKitCall(callkit_CallUUID);
+      FlutterCallkitIncoming.endCall(callkit_CallUUID).catchError((_) {});
+    }
+
+    final dynamic hintRaw = pushPayload['caller_number'] ??
+        pushPayload['callerNumber'] ??
+        pushPayload['callerId'];
+    final String pushHint = hintRaw?.toString().trim() ?? '';
+
+    for (var i = _callMatchers.length - 1; i >= 0; i--) {
+      final m = _callMatchers[i];
+      final bool matchUuid = m.callkit_CallUUID.isNotEmpty &&
+          m.callkit_CallUUID == callkit_CallUUID;
+      final bool matchHint =
+          pushHint.isNotEmpty && m.push_Hint == pushHint;
+      if (!matchUuid && !matchHint) continue;
+
+      final String staleUuid = m.callkit_CallUUID;
+      _callMatchers.removeAt(i);
+      if (staleUuid.isNotEmpty && staleUuid != callkit_CallUUID) {
+        SiprixVoipSdk().endCallKitCall(staleUuid);
+        FlutterCallkitIncoming.endCall(staleUuid).catchError((_) {});
+      }
+    }
+
+    if (_callMatchers.isEmpty) {
+      _pushNotifTimer?.cancel();
+      _pushNotifTimer = null;
+    }
+    _resetIosCallKitWhenNoSipCalls();
+  }
+
+  /// Handle iOS Pushkit notification received by library (parse payload, update CallKit window, store data from push payload)
   @override
   void onIncomingPush(String callkit_CallUUID, Map<String, dynamic> pushPayload) {
     _logs?.print('onIncomingPush callkit_CallUUID:$callkit_CallUUID $pushPayload');
     debugPrint('[PushKit] Incoming VoIP push received. uuid:$callkit_CallUUID payload:$pushPayload');
     print('[PushKit] Incoming VoIP push received. uuid:$callkit_CallUUID');
+
+    // Backend sends a second VoIP push with type:"End" when the caller hangs up.
+    // iOS requires Siprix to report every VoIP push as CallKit incoming — dismiss
+    // those end/cancel pushes immediately so the receiver does not ring again.
+    if (_isNonRingingPush(pushPayload)) {
+      _logs?.print(
+          'onIncomingPush: non-ringing push (type=${pushPayload["type"]}), dismissing CallKit $callkit_CallUUID');
+      debugPrint(
+          '[PushKit] Non-ringing push (type=${pushPayload["type"]}). Dismissing CallKit $callkit_CallUUID');
+      _dismissNonRingingPush(callkit_CallUUID, pushPayload);
+      return;
+    }
+
     //Get data from 'pushPayload', which contains app specific details
     Map<String, dynamic>? apsPayload;
     try {
