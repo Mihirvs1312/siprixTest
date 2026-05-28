@@ -10,7 +10,6 @@ import 'package:siprix_voip_sdk/calls_model.dart';
 import 'package:siprix_voip_sdk/cdrs_model.dart';
 import 'package:siprix_voip_sdk/siprix_voip_sdk.dart';
 
-import 'call_event_log.dart';
 import 'callkit_incoming_fallback.dart';
 import 'voip_ios_config.dart';
 
@@ -42,63 +41,21 @@ class AppCallsModel extends CallsModel {
   final ILogsModel? _logs;
   final List<CallMatcher> _callMatchers=[];//iOS PushKit specific impl
   Timer? _pushNotifTimer;
-  final Set<int> _callStartLogged = {};
-
-  CallModel? _callBySipId(int sipCallId) {
-    for (final c in this) {
-      if (c.myCallId == sipCallId) return c;
-    }
-    return null;
-  }
-
-  Future<void> _emitCallLog({
-    required String type,
-    required int sipCallId,
-    required String callerName,
-    required String callerNumber,
-    required String receiverNumber,
-  }) async {
-    try {
-      final payload = await CallEventLog.build(
-        type: type,
-        sipCallId: sipCallId,
-        callerName: callerName,
-        callerNumber: callerNumber,
-        receiverNumber: receiverNumber,
-      );
-      final line = CallEventLog.toPrettyJson(payload);
-      _logs?.print('[CallLog]\n$line');
-      debugPrint('[CallLog]\n$line');
-    } catch (e, st) {
-      _logs?.print('CallLog failed: $e\n$st');
-    }
-  }
+  // final Set<int> _callStartLogged = {};
+  //
+  // CallModel? _callBySipId(int sipCallId) {
+  //   for (final c in this) {
+  //     if (c.myCallId == sipCallId) return c;
+  //   }
+  //   return null;
+  // }
 
   void _endCallKitForSipCallId(int sipCallId) {
     if (!Platform.isIOS) return;
-    // End every CallKit row tied to this SIP call: primary matchers, duplicate UUID
-    // rows, and orphan PushKit/fallback rows (same push hint, sip_CallId still 0).
-    final hintsFromThisCall = <String>{};
-    final uuidsFromThisCall = <String>{};
-    for (final m in _callMatchers) {
-      if (m.sip_CallId != sipCallId) continue;
-      hintsFromThisCall.add(m.push_Hint);
-      if (m.callkit_CallUUID.isNotEmpty) {
-        uuidsFromThisCall.add(m.callkit_CallUUID);
-      }
-    }
-
+    // Remove every matcher for this SIP id (avoids duplicate rows after reconnects).
     for (var i = _callMatchers.length - 1; i >= 0; i--) {
-      final m = _callMatchers[i];
-      final bool primary = m.sip_CallId == sipCallId;
-      final bool orphanSameHint =
-          m.sip_CallId == 0 && hintsFromThisCall.contains(m.push_Hint);
-      final bool sameCallKitUuid = m.callkit_CallUUID.isNotEmpty &&
-          uuidsFromThisCall.contains(m.callkit_CallUUID) &&
-          !(m.sip_CallId != 0 && m.sip_CallId != sipCallId);
-      if (!primary && !orphanSameHint && !sameCallKitUuid) continue;
-
-      final String uuid = m.callkit_CallUUID;
+      if (_callMatchers[i].sip_CallId != sipCallId) continue;
+      final String uuid = _callMatchers[i].callkit_CallUUID;
       _callMatchers.removeAt(i);
       if (uuid.isEmpty) continue;
       SiprixVoipSdk().endCallKitCall(uuid);
@@ -123,39 +80,39 @@ class AppCallsModel extends CallsModel {
   }
 
   /// Resolve SIP call id from our PushKit / fallback bookkeeping (for CallKit events).
-  int? findSipCallIdByCallKitUuid(String? uuid) {
-    if (uuid == null || uuid.isEmpty) return null;
-    for (final m in _callMatchers) {
-      if (m.callkit_CallUUID == uuid) return m.sip_CallId;
-    }
-    return null;
-  }
-
-  /// After the user declines or ends from CallKit / VoIP incoming UI: tear down native + plugin UI,
-  /// keep [_callMatchers] in sync, and hide Android full-screen call notification.
-  void syncAfterCallKitUserHangup(int sipCallId, String? callKitUuid) {
-    if (Platform.isIOS) {
-      if (sipCallId > 0) {
-        _endCallKitForSipCallId(sipCallId);
-      } else if (callKitUuid != null && callKitUuid.isNotEmpty) {
-        for (var i = _callMatchers.length - 1; i >= 0; i--) {
-          if (_callMatchers[i].callkit_CallUUID != callKitUuid) continue;
-          _callMatchers.removeAt(i);
-        }
-      }
-      if (callKitUuid != null && callKitUuid.isNotEmpty) {
-        SiprixVoipSdk().endCallKitCall(callKitUuid);
-        FlutterCallkitIncoming.endCall(callKitUuid).catchError((_) {});
-      }
-      _resetIosCallKitWhenNoSipCalls();
-    } else if (Platform.isAndroid) {
-      if (callKitUuid != null && callKitUuid.isNotEmpty) {
-        FlutterCallkitIncoming.endCall(callKitUuid).catchError((_) {});
-        hideAndroidCallkitIncomingForId(callKitUuid);
-      }
-      FlutterCallkitIncoming.endAllCalls().catchError((_) {});
-    }
-  }
+  // int? findSipCallIdByCallKitUuid(String? uuid) {
+  //   if (uuid == null || uuid.isEmpty) return null;
+  //   for (final m in _callMatchers) {
+  //     if (m.callkit_CallUUID == uuid) return m.sip_CallId;
+  //   }
+  //   return null;
+  // }
+  //
+  // /// After the user declines or ends from CallKit / VoIP incoming UI: tear down native + plugin UI,
+  // /// keep [_callMatchers] in sync, and hide Android full-screen call notification.
+  // void syncAfterCallKitUserHangup(int sipCallId, String? callKitUuid) {
+  //   if (Platform.isIOS) {
+  //     if (sipCallId > 0) {
+  //       _endCallKitForSipCallId(sipCallId);
+  //     } else if (callKitUuid != null && callKitUuid.isNotEmpty) {
+  //       for (var i = _callMatchers.length - 1; i >= 0; i--) {
+  //         if (_callMatchers[i].callkit_CallUUID != callKitUuid) continue;
+  //         _callMatchers.removeAt(i);
+  //       }
+  //     }
+  //     if (callKitUuid != null && callKitUuid.isNotEmpty) {
+  //       SiprixVoipSdk().endCallKitCall(callKitUuid);
+  //       FlutterCallkitIncoming.endCall(callKitUuid).catchError((_) {});
+  //     }
+  //     _resetIosCallKitWhenNoSipCalls();
+  //   } else if (Platform.isAndroid) {
+  //     if (callKitUuid != null && callKitUuid.isNotEmpty) {
+  //       FlutterCallkitIncoming.endCall(callKitUuid).catchError((_) {});
+  //       hideAndroidCallkitIncomingForId(callKitUuid);
+  //     }
+  //     FlutterCallkitIncoming.endAllCalls().catchError((_) {});
+  //   }
+  // }
 
   /// Accepts the first incoming call that is still ringing (list order).
   Future<void> acceptFirstRingingIncoming() async {
@@ -190,12 +147,127 @@ class AppCallsModel extends CallsModel {
     }
   }
 
-   /// Handle iOS Pushkit notification received by library (parse payload, update CallKit window, store data from push payload)
+  /// `type` values the backend sends for a real incoming ring. Any other
+  /// recognised end/cancel/missed marker is dismissed in [onIncomingPush].
+  static const Set<String> _kRingingPushTypes = <String>{
+    'start', 'incoming', 'invite', 'ring', 'ringing', 'call',
+  };
+  static const Set<String> _kEndPushTypes = <String>{
+    'end', 'ended', 'end_call', 'endcall',
+    'cancel', 'cancelled', 'canceled', 'cancel_call',
+    'missed', 'missed_call', 'miss',
+    'bye', 'terminated', 'terminate',
+    'hangup', 'hang_up',
+    'reject', 'rejected', 'decline', 'declined',
+  };
+
+  bool _isNonRingingPush(Map<String, dynamic> payload) {
+    String norm(dynamic v) => v?.toString().trim().toLowerCase() ?? '';
+
+    final candidates = <String>[
+      norm(payload['type']),
+      norm(payload['event']),
+      norm(payload['action']),
+      norm(payload['state']),
+      norm(payload['call_status']),
+      norm(payload['callStatus']),
+    ];
+
+    Map<String, dynamic>? nested;
+    final nestedRaw = payload['data'] ?? payload['payload'];
+    if (nestedRaw is Map) {
+      nested = Map<String, dynamic>.from(nestedRaw);
+      candidates.addAll([
+        norm(nested['type']),
+        norm(nested['event']),
+        norm(nested['action']),
+        norm(nested['state']),
+      ]);
+    }
+
+    try {
+      final aps = payload['aps'];
+      if (aps is Map) {
+        candidates.add(norm(aps['alert']));
+      }
+    } catch (_) {}
+
+    for (final c in candidates) {
+      if (c.isEmpty) continue;
+      if (_kRingingPushTypes.contains(c)) return false;
+      if (_kEndPushTypes.contains(c)) return true;
+    }
+
+    bool truthy(dynamic v) =>
+        v == true || v == 1 || norm(v) == 'true' || norm(v) == '1';
+    if (truthy(payload['endCall']) ||
+        truthy(payload['end_call']) ||
+        truthy(payload['isEnd']) ||
+        truthy(payload['is_end']) ||
+        truthy(payload['ended']) ||
+        truthy(payload['cancelled']) ||
+        truthy(payload['canceled'])) {
+      return true;
+    }
+    if (payload['incoming'] == false) return true;
+
+    return false;
+  }
+
+  void _dismissNonRingingPush(
+      String callkit_CallUUID, Map<String, dynamic> pushPayload) {
+    if (callkit_CallUUID.isNotEmpty) {
+      SiprixVoipSdk().endCallKitCall(callkit_CallUUID);
+      FlutterCallkitIncoming.endCall(callkit_CallUUID).catchError((_) {});
+    }
+
+    final dynamic hintRaw = pushPayload['caller_number'] ??
+        pushPayload['callerNumber'] ??
+        pushPayload['callerId'];
+    final String pushHint = hintRaw?.toString().trim() ?? '';
+
+    for (var i = _callMatchers.length - 1; i >= 0; i--) {
+      final m = _callMatchers[i];
+      final bool matchUuid = m.callkit_CallUUID.isNotEmpty &&
+          m.callkit_CallUUID == callkit_CallUUID;
+      final bool matchHint =
+          pushHint.isNotEmpty && m.push_Hint == pushHint;
+      if (!matchUuid && !matchHint) continue;
+
+      final String staleUuid = m.callkit_CallUUID;
+      _callMatchers.removeAt(i);
+      if (staleUuid.isNotEmpty && staleUuid != callkit_CallUUID) {
+        SiprixVoipSdk().endCallKitCall(staleUuid);
+        FlutterCallkitIncoming.endCall(staleUuid).catchError((_) {});
+      }
+    }
+
+    if (_callMatchers.isEmpty) {
+      _pushNotifTimer?.cancel();
+      _pushNotifTimer = null;
+    }
+    _resetIosCallKitWhenNoSipCalls();
+  }
+
+  /// Handle iOS Pushkit notification received by library (parse payload, update CallKit window, store data from push payload)
   @override
   void onIncomingPush(String callkit_CallUUID, Map<String, dynamic> pushPayload) {
     _logs?.print('onIncomingPush callkit_CallUUID:$callkit_CallUUID $pushPayload');
     debugPrint('[PushKit] Incoming VoIP push received. uuid:$callkit_CallUUID payload:$pushPayload');
     print('[PushKit] Incoming VoIP push received. uuid:$callkit_CallUUID');
+
+    // Backend sends a second VoIP push with type:"End" when the caller hangs up.
+    // iOS requires Siprix to report every VoIP push as CallKit incoming — dismiss
+    // those end/cancel pushes immediately so the receiver does not ring again.
+    if (_isNonRingingPush(pushPayload)) {
+      _logs?.print(
+          'onIncomingPush: non-ringing push (type=${pushPayload["type"]}), dismissing CallKit $callkit_CallUUID');
+      debugPrint(
+          '[PushKit] Non-ringing push (type=${pushPayload["type"]}). Dismissing CallKit $callkit_CallUUID');
+      _dismissNonRingingPush(callkit_CallUUID, pushPayload);
+      return;
+    }
+
     //Get data from 'pushPayload', which contains app specific details
     Map<String, dynamic>? apsPayload;
     try {
@@ -266,24 +338,17 @@ class AppCallsModel extends CallsModel {
     return '${h.substring(0, 8)}-${h.substring(8, 12)}-${h.substring(12, 16)}-${h.substring(16, 20)}-${h.substring(20, 32)}';
   }
 
-  @override
-  void onProceeding(int callId, String response) {
-    super.onProceeding(callId, response);
-    final c = _callBySipId(callId);
-    if (c == null || c.isIncoming) return;
-    if (_callStartLogged.contains(callId)) return;
-    _callStartLogged.add(callId);
-    final accExt = CallsModel.parseExt(c.accUri);
-    final callerName =
-        c.displName.isNotEmpty ? c.displName : (accExt.isNotEmpty ? accExt : c.remoteExt);
-    unawaited(_emitCallLog(
-      type: 'start',
-      sipCallId: callId,
-      callerName: callerName,
-      callerNumber: accExt,
-      receiverNumber: c.remoteExt,
-    ));
-  }
+  // @override
+  // void onProceeding(int callId, String response) {
+  //   super.onProceeding(callId, response);
+  //   final c = _callBySipId(callId);
+  //   if (c == null || c.isIncoming) return;
+  //   if (_callStartLogged.contains(callId)) return;
+  //   _callStartLogged.add(callId);
+  //   final accExt = CallsModel.parseExt(c.accUri);
+  //   final callerName =
+  //       c.displName.isNotEmpty ? c.displName : (accExt.isNotEmpty ? accExt : c.remoteExt);
+  // }
 
   @override
   void onConnected(int callId, String from, String to, bool withVideo) {
@@ -291,13 +356,6 @@ class AppCallsModel extends CallsModel {
     final callerNum = CallsModel.parseExt(from);
     final recvNum = CallsModel.parseExt(to);
     final callerName = disp.isNotEmpty ? disp : callerNum;
-    unawaited(_emitCallLog(
-      type: 'connected',
-      sipCallId: callId,
-      callerName: callerName,
-      callerNumber: callerNum,
-      receiverNumber: recvNum,
-    ));
     super.onConnected(callId, from, to, withVideo);
   }
 
@@ -305,20 +363,13 @@ class AppCallsModel extends CallsModel {
   void onIncomingSip(int callId, int accId, bool withVideo, String hdrFrom, String hdrTo) async {
     super.onIncomingSip(callId, accId, withVideo, hdrFrom, hdrTo);
 
-    if (!_callStartLogged.contains(callId)) {
-      _callStartLogged.add(callId);
-      final callerNum = CallsModel.parseExt(hdrFrom);
-      final recvNum = CallsModel.parseExt(hdrTo);
-      final disp = CallsModel.parseDisplayName(hdrFrom);
-      final callerName = disp.isNotEmpty ? disp : callerNum;
-      unawaited(_emitCallLog(
-        type: 'start',
-        sipCallId: callId,
-        callerName: callerName,
-        callerNumber: callerNum,
-        receiverNumber: recvNum,
-      ));
-    }
+    // if (!_callStartLogged.contains(callId)) {
+    //   _callStartLogged.add(callId);
+    //   final callerNum = CallsModel.parseExt(hdrFrom);
+    //   final recvNum = CallsModel.parseExt(hdrTo);
+    //   final disp = CallsModel.parseDisplayName(hdrFrom);
+    //   final callerName = disp.isNotEmpty ? disp : callerNum;
+    // }
 
     try {
       final String? fullSip =
@@ -384,34 +435,7 @@ class AppCallsModel extends CallsModel {
 
   @override
   void onTerminated(int callId, int statusCode) {
-    final c = _callBySipId(callId);
-    if (c != null) {
-      late final String callerNum;
-      late final String receiverNum;
-      late final String callerName;
-      if (c.isIncoming) {
-        callerNum = c.remoteExt;
-        receiverNum = CallsModel.parseExt(c.accUri);
-        callerName =
-            c.displName.isNotEmpty ? c.displName : (callerNum.isNotEmpty ? callerNum : receiverNum);
-      } else {
-        callerNum = CallsModel.parseExt(c.accUri);
-        receiverNum = c.remoteExt;
-        callerName =
-            c.displName.isNotEmpty ? c.displName : (callerNum.isNotEmpty ? callerNum : receiverNum);
-      }
-      unawaited(_emitCallLog(
-        type: 'end',
-        sipCallId: callId,
-        callerName: callerName,
-        callerNumber: callerNum,
-        receiverNumber: receiverNum,
-      ));
-    }
-    _callStartLogged.remove(callId);
-
     super.onTerminated(callId, statusCode);
-
     if (Platform.isIOS) {
       _endCallKitForSipCallId(callId);
       // After the last SIP call ends, clear any orphan CallKit state so the next VoIP works.

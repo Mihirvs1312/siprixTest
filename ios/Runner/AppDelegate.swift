@@ -1,9 +1,10 @@
 import UIKit
 import Flutter
 import AVFoundation
-import PushKit
-import CallKit
 
+// Siprix iOS plugin (`SiprixPushRegistry`) owns the only PKPushRegistry and
+// reports CallKit for every VoIP push. Do not add another pushRegistry handler
+// here — it causes a duplicate incoming-call screen after caller hangup.
 @main
 @objc class AppDelegate: FlutterAppDelegate {
   private func prepareVoIPAudioSession() {
@@ -65,22 +66,6 @@ import CallKit
     configureVoIPAudioSession()
   }
 
-  func pushRegistry(
-    _ registry: PKPushRegistry,
-    didReceiveIncomingPushWith payload: PKPushPayload,
-    for type: PKPushType,
-    completion: @escaping () -> Void
-  ) {
-    prepareVoIPAudioSession()
-    let providerConfiguration = CXProviderConfiguration(localizedName: "siprixTest")
-    let provider = CXProvider(configuration: providerConfiguration)
-    let update = CXCallUpdate()
-    update.remoteHandle = CXHandle(type: .generic, value: "Incoming call")
-
-    provider.reportNewIncomingCall(with: UUID(), update: update) { _ in
-      completion()
-    }
-  }
   override func application(
     _ application: UIApplication,
     continue userActivity: NSUserActivity,

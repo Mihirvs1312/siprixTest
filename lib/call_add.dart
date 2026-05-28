@@ -104,7 +104,7 @@ class _CallAddPageState extends State<CallAddPage> {
           //contentPadding:const EdgeInsets.fromLTRB(0, 0, 10, 0),
           leading: _getCdrIcon(cdr),
           title: _getCdrTitle(cdr),
-          subtitle: _buildCdrSubtitle(context, cdr, index),
+            subtitle: (_selCdrRowIdx == index) ? _getCdrSubTitle(cdr) : null,
           trailing: _getCdrRowTrailing(cdr, index),
           dense: true,
           onTap: () {
@@ -137,34 +137,48 @@ class _CallAddPageState extends State<CallAddPage> {
         style: Theme.of(context).textTheme.titleSmall);
   }
 
-  Widget _buildCdrSubtitle(BuildContext context, CdrModel cdr, int index) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Call ID: ${cdr.myCallId}',
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: Colors.grey.shade700,
-                fontWeight: FontWeight.w500,
-              ),
-        ),
-        if (_selCdrRowIdx == index) _getCdrSubTitle(cdr),
-      ],
-    );
+  // Widget _buildCdrSubtitle(BuildContext context, CdrModel cdr, int index) {
+  //   return Column(
+  //     crossAxisAlignment: CrossAxisAlignment.start,
+  //     children: [
+  //       Text(
+  //         'Call ID: ${cdr.myCallId}',
+  //         style: Theme.of(context).textTheme.labelSmall?.copyWith(
+  //               color: Colors.grey.shade700,
+  //               fontWeight: FontWeight.w500,
+  //             ),
+  //       ),
+  //       if (_selCdrRowIdx == index) _getCdrSubTitle(cdr),
+  //     ],
+  //   );
+  // }
+
+  Widget? _getCdrSubTitle(CdrModel cdr) {
+    return
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(cdr.accUri, style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
+        Wrap(spacing:5, children: [
+          Text(cdr.madeAtDate),
+          if(cdr.connected) Text("Duration: ${cdr.duration}"),
+          if(cdr.statusCode!=0) Text("Status code: ${cdr.statusCode}"),
+          if(cdr.reason.isNotEmpty) Text(cdr.reason),
+          if(cdr.hasVideo) const Icon(Icons.videocam_outlined, color: Colors.grey, size:18),
+        ])
+      ]);
   }
 
-  Widget _getCdrSubTitle(CdrModel cdr) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(cdr.accUri, style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
-      Wrap(spacing: 5, children: [
-        Text(cdr.madeAtDate),
-        if (cdr.connected) Text("Duration: ${cdr.duration}"),
-        if (cdr.statusCode != 0) Text("Status code: ${cdr.statusCode}"),
-        if (cdr.reason.isNotEmpty) Text(cdr.reason),
-        if (cdr.hasVideo) const Icon(Icons.videocam_outlined, color: Colors.grey, size: 18),
-      ])
-    ]);
-  }
+  // Widget _getCdrSubTitle(CdrModel cdr) {
+  //   return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+  //     Text(cdr.accUri, style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
+  //     Wrap(spacing: 5, children: [
+  //       Text(cdr.madeAtDate),
+  //       if (cdr.connected) Text("Duration: ${cdr.duration}"),
+  //       if (cdr.statusCode != 0) Text("Status code: ${cdr.statusCode}"),
+  //       if (cdr.reason.isNotEmpty) Text(cdr.reason),
+  //       if (cdr.hasVideo) const Icon(Icons.videocam_outlined, color: Colors.grey, size: 18),
+  //     ])
+  //   ]);
+  // }
 
   Widget _getCdrRowTrailing(CdrModel cdr, int index) {
     return
