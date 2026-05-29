@@ -147,6 +147,21 @@ class AppCallsModel extends CallsModel {
     }
   }
 
+  /// Normalise a caller number used as `push_Hint` so the VoIP push side and the
+  /// SIP INVITE side match even when one carries a leading `+`/spaces and the
+  /// other doesn't. Twilio E.164 numbers (e.g. `+16467606640`) and PBX-stripped
+  /// variants (e.g. `16467606640`) must collapse to the same key.
+  ///
+  /// Returns the digits-only form, or the trimmed input when no digits exist
+  /// (so things like the stub hint stay intact).
+  static String _normalizePhoneHint(String raw) {
+    final String trimmed = raw.trim();
+    if (trimmed.isEmpty) return trimmed;
+    if (trimmed == CallMatcher.kStubPushHint) return trimmed;
+    final String digits = trimmed.replaceAll(RegExp(r'[^0-9]'), '');
+    return digits.isEmpty ? trimmed : digits;
+  }
+
   /// `type` values the backend sends for a real incoming ring. Any other
   /// recognised end/cancel/missed marker is dismissed in [onIncomingPush].
   static const Set<String> _kRingingPushTypes = <String>{
@@ -224,7 +239,10 @@ class AppCallsModel extends CallsModel {
     final dynamic hintRaw = pushPayload['caller_number'] ??
         pushPayload['callerNumber'] ??
         pushPayload['callerId'];
-    final String pushHint = hintRaw?.toString().trim() ?? '';
+    final String rawHint = hintRaw?.toString().trim() ?? '';
+    // Same digits-only normalisation as the start/incoming push so end-call
+    // pushes for Twilio (E.164 with leading `+`) also dismiss the right row.
+    final String pushHint = _normalizePhoneHint(rawHint);
 
     for (var i = _callMatchers.length - 1; i >= 0; i--) {
       final m = _callMatchers[i];
@@ -280,7 +298,10 @@ class AppCallsModel extends CallsModel {
     final dynamic hintRaw = pushPayload?["caller_number"] ??
         pushPayload?["callerNumber"] ??
         pushPayload?["callerId"];
-    String pushHint = hintRaw?.toString().trim() ?? '';
+    final String rawPushHint = hintRaw?.toString().trim() ?? '';
+    // Normalise digits-only so Twilio "+16467606640" pushes match the SIP From
+    // user-part "+16467606640" / "16467606640" reported by the PBX.
+    String pushHint = _normalizePhoneHint(rawPushHint);
     if (pushHint.isEmpty) pushHint = CallMatcher.kStubPushHint;
     // Docs/curl samples use callerId; some servers send callerNumber.
     final dynamic handleRaw = pushPayload?["caller_number"] ?? pushPayload?["callerNumber"] ?? pushPayload?["callerId"];
@@ -316,17 +337,28 @@ class AppCallsModel extends CallsModel {
     _startPushNotifTimer();
   }
 
+  /// Extract the SIP URI user-part from a header value such as
+  /// `"Twilio" <sip:+16467606640@pbx>;tag=...` or `<sip:6001@host>`.
+  ///
+  /// Previously this used `RegExp(r'sip:(\d+)@')` which only matched bare
+  /// digits — so Twilio E.164 numbers (`sip:+16467606640@...`) returned `null`
+  /// and the PushKit ↔ SIP INVITE matcher fell through to the stub hint,
+  /// leaving CallKit unlinked from the SIP call (no audio / never connects).
   String? getExtensionNumber(String sipString) {
-  // Regular expression to match digits after 'sip:' and before '@'
-  RegExp regExp = RegExp(r'sip:(\d+)@');
-  Match? match = regExp.firstMatch(sipString);
+    if (sipString.isEmpty) return null;
 
-  // If match found, return the captured group (extension number)
-  if (match != null) {
-    return match.group(1);
+    // Prefer the SDK helper – it correctly handles `+`, letters, and other
+    // URI-safe characters between `:` and `@`.
+    final String fromSdk = CallsModel.parseExt(sipString).trim();
+    if (fromSdk.isNotEmpty) return fromSdk;
+
+    // Fallback for inputs that don't follow the `displName <sip:user@host>`
+    // shape expected by `parseExt` (e.g. just `sip:user@host`).
+    final RegExp regExp =
+        RegExp(r'sip:([^@>;\s]+)@', caseSensitive: false);
+    final Match? match = regExp.firstMatch(sipString);
+    return match?.group(1);
   }
-  return null; // Return null if no extension number is found
-}
 
   /// RFC 4122 version 4 UUID for synthetic CallKit / notification correlation.
   static String _randomCallUuidV4() {
@@ -386,11 +418,19 @@ class AppCallsModel extends CallsModel {
 
     if(Platform.isIOS && kIosUsePushKit) {
       // Match CallKit push flow with SIP INVITE using a shared hint (PBX should set X-PushHint to match push payload).
-      
-      // String pushHint = await SiprixVoipSdk().getSipHeader(callId, "X-PushHint")?? CallMatcher.kStubPushHint;
-      String? extensionNumber = getExtensionNumber(hdrFrom);
-      print('extensionNumber: $extensionNumber');
-      String pushHint = extensionNumber ?? CallMatcher.kStubPushHint;
+      //
+      // Normalise to digits-only so a Twilio E.164 caller (`sip:+16467606640@host`)
+      // matches the push payload's `caller_number` whether the PBX delivered it
+      // with or without the leading `+`. Without this, the PushKit-presented
+      // CallKit row never gets `updateCallKitCallDetails(uuid, sipCallId, ...)`
+      // and answering the call does nothing (no audio, never connects).
+      final String? extensionNumber = getExtensionNumber(hdrFrom);
+      final String normalizedExt = (extensionNumber == null)
+          ? ''
+          : _normalizePhoneHint(extensionNumber);
+      print('extensionNumber: $extensionNumber normalized: $normalizedExt');
+      String pushHint =
+          normalizedExt.isNotEmpty ? normalizedExt : CallMatcher.kStubPushHint;
       _logs?.print('onIncomingSip callId:$callId pushHint:$pushHint hdrFrom:$hdrFrom hdrTo:$hdrTo');
 
       //Searchs is there CallKit call which matches this one

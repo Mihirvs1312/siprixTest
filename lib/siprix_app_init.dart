@@ -7,8 +7,24 @@ import 'package:siprix_voip_sdk/siprix_voip_sdk.dart';
 
 import 'voip_ios_config.dart';
 
-/// Single entry for Siprix native init (foreground, FCM background isolate, tests).
+Future<void>? _siprixInitFuture;
+
+/// Single entry for Siprix native init (foreground boot, VoIP push, FCM background).
 Future<void> initializeSiprixApp({LogsModel? logs}) async {
+  if (_siprixInitFuture != null) {
+    return _siprixInitFuture!;
+  }
+  final future = _initializeSiprixAppOnce(logs);
+  _siprixInitFuture = future;
+  try {
+    await future;
+  } catch (e) {
+    _siprixInitFuture = null;
+    rethrow;
+  }
+}
+
+Future<void> _initializeSiprixAppOnce(LogsModel? logs) async {
   debugPrint('Initialize siprix');
   final iniData = InitData()
     ..logLevelFile = LogLevel.debug

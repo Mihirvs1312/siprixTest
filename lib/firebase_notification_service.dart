@@ -187,6 +187,8 @@ class FirebaseNotificationService {
   void Function(Map<String, dynamic> data)? onIncomingCallPush;
   /// Fired for every FCM message while the app is in the foreground (e.g. refresh SIP REGISTER).
   void Function(Map<String, dynamic> data)? onForegroundMessage;
+  /// Fired when FCM issues a new device token (e.g. sync token to backend).
+  void Function(String newToken)? onTokenRefreshed;
 
   // ---- Initialisation -------------------------------------------------------
 
@@ -355,6 +357,7 @@ class FirebaseNotificationService {
     _messaging.onTokenRefresh.listen((newToken) {
       _fcmToken = newToken;
       debugPrint('FCM Token refreshed: $newToken');
+      onTokenRefreshed?.call(newToken);
     });
   }
 

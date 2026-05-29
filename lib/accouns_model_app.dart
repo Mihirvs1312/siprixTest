@@ -1,6 +1,7 @@
 import 'dart:io';
 
 //import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_device_identifier/mobile_device_identifier.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -16,6 +17,8 @@ class AppAccountsModel extends AccountsModel {
   final ILogsModel? _logs;
 
   static const _deviceIdPrefsKey = 'siprix_app_device_id';
+  static const _tokenSyncPrefix = 'siprix_token_sync_';
+  Future<void>? _wakeRefreshFuture;
 
   static String get _deviceType {
     if (Platform.isIOS) return 'ios';
@@ -61,6 +64,13 @@ class AppAccountsModel extends AccountsModel {
       if (token == null) return;
 
       final deviceId = await _getOrCreateDeviceId();
+      final cacheKey = '$_tokenSyncPrefix$_deviceType}_${extension}_$deviceId';
+      final prefs = await SharedPreferences.getInstance();
+      final lastToken = prefs.getString(cacheKey);
+      if (lastToken == token) {
+        _logs?.print('Save token skipped (unchanged token for extension:$extension)');
+        return;
+      }
       final result = await SipRepository.saveToken({
         'extension': extension,
         'device_type': _deviceType,
@@ -69,7 +79,9 @@ class AppAccountsModel extends AccountsModel {
       });
       if (result.status != 'ok') {
         _logs?.print('Save token API: ${result.message ?? result.status}');
+        return;
       }
+      await prefs.setString(cacheKey, token);
     } catch (e) {
       _logs?.print('Save token failed: $e');
     }
@@ -85,7 +97,11 @@ class AppAccountsModel extends AccountsModel {
       });
       if (result.status != 'ok') {
         _logs?.print('Delete token API: ${result.message ?? result.status}');
+        return;
       }
+      final cacheKey = '$_tokenSyncPrefix$_deviceType}_${extension}_$deviceId';
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(cacheKey);
     } catch (e) {
       _logs?.print('Delete token failed: $e');
     }
@@ -151,6 +167,53 @@ class AppAccountsModel extends AccountsModel {
     await super.addAccount(acc, saveChanges: saveChanges);
   }
 
+  /// After idle or kill, a VoIP push can arrive before boot hydrates this model.
+  /// Load saved accounts from disk when empty, then refresh native REGISTER.
+  Future<void> ensureReadyAndRefreshRegistration() async {
+    if (isEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
+      final accJsonStr = prefs.getString('accounts') ?? '';
+      if (accJsonStr.isNotEmpty) {
+        _logs?.print('[PushKit] Loading saved accounts for push wake');
+        debugPrint('[PushKit] Loading saved accounts for push wake');
+        await loadFromJson(accJsonStr);
+      }
+    }
+    if (isEmpty) {
+      _logs?.print('[PushKit] No accounts to refresh after push');
+      debugPrint('[PushKit] No accounts to refresh after push');
+      return;
+    }
+    await refreshRegistration();
+  }
+
+  /// One coalesced wake path reused by PushKit, app-resume, and network-regain triggers.
+  Future<void> refreshRegistrationForWake({String reason = 'unknown'}) async {
+    if (!Platform.isIOS) {
+      await ensureReadyAndRefreshRegistration();
+      return;
+    }
+    if (_wakeRefreshFuture != null) {
+      await _wakeRefreshFuture;
+      return;
+    }
+    final future = _runWakeRefresh(reason);
+    _wakeRefreshFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_wakeRefreshFuture, future)) {
+        _wakeRefreshFuture = null;
+      }
+    }
+  }
+
+  Future<void> _runWakeRefresh(String reason) async {
+    await ensureReadyAndRefreshRegistration();
+    _logs?.print('[iOS wake refresh] registration refreshed ($reason)');
+  }
+
   /// Awaits each native [registerAccount] call. The base [AccountsModel.refreshRegistration]
   /// does not await, which can surface unhandled [PlatformException]s on Android.
   @override
@@ -169,6 +232,17 @@ class AppAccountsModel extends AccountsModel {
       return Future.error(
         err.message == null ? err.code : err.message!,
       );
+    }
+  }
+
+  /// Sync currently active push token for every configured account extension.
+  Future<void> syncCurrentTokenToBackend() async {
+    final seen = <String>{};
+    for (var i = 0; i < length; i++) {
+      final ext = this[i].sipExtension.trim();
+      if (ext.isEmpty || seen.contains(ext)) continue;
+      seen.add(ext);
+      await _saveTokenToBackend(ext);
     }
   }
 

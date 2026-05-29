@@ -110,9 +110,10 @@ void main() async {
 
 
 Future<void> _initializeFCM() async {
-  if(Platform.isAndroid) {
+  if (Platform.isAndroid) {
     WidgetsFlutterBinding.ensureInitialized();
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform);
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   }
 }
@@ -191,6 +192,8 @@ class _MyAppState extends State<MyApp> {
   /// Android only; must stay nullable without [late] — on iOS we never assign and
   /// [late final] would throw on first read in [dispose].
   AppLifecycleListener? _listener;
+  bool _lastIosNetworkLost = false;
+  NetworkModel? _iosNetworkModel;
 
   @override
   void initState() {
@@ -203,8 +206,17 @@ class _MyAppState extends State<MyApp> {
     // and the incoming leg can drop when init or registration runs again.
     _bootAfterFirstFrame();
 
-    if(Platform.isAndroid)
+    if (Platform.isIOS) {
+      _listener = AppLifecycleListener(
+        onResume: _onIosAppResume,
+        onRestart: _onIosAppResume,
+      );
+      _iosNetworkModel = context.read<NetworkModel>();
+      _lastIosNetworkLost = _iosNetworkModel?.networkLost ?? false;
+      _iosNetworkModel?.addListener(_onIosNetworkStateChanged);
+    } else if (Platform.isAndroid) {
       _listener = AppLifecycleListener(onInactive: _onAndroidAppInactive);
+    }
   }
 
   Future<void> _bootAfterFirstFrame() async {
@@ -244,10 +256,10 @@ class _MyAppState extends State<MyApp> {
       final accounts = context.read<AppAccountsModel>();
       FirebaseNotificationService.instance.onForegroundMessage = (data) async {
         debugPrint('[FCM] foreground push: $data');
-        if (!mounted) return;
+        if (!mounted || !Platform.isIOS) return;
         try {
-          await accounts.refreshRegistration();
-          debugPrint('[FCM] SIP registration refreshed after foreground push');
+          await accounts.refreshRegistrationForWake(reason: 'ios_fcm_foreground');
+          debugPrint('[FCM] SIP registration refreshed after foreground push (iOS)');
         } catch (e, st) {
           debugPrint(
               '[FCM] refreshRegistration after foreground push failed: $e\n$st');
@@ -255,6 +267,15 @@ class _MyAppState extends State<MyApp> {
       };
       FirebaseNotificationService.instance.onIncomingCallPush = (data) {
         debugPrint('[FCM] foreground incoming_call push: $data');
+      };
+      FirebaseNotificationService.instance.onTokenRefreshed = (_) async {
+        if (!mounted) return;
+        try {
+          await accounts.syncCurrentTokenToBackend();
+          debugPrint('[FCM] token refresh synced to backend');
+        } catch (e, st) {
+          debugPrint('[FCM] token sync after refresh failed: $e\n$st');
+        }
       };
       FirebaseNotificationService.instance.onCallAccepted = (_) async {
         await calls.acceptFirstRingingIncoming();
@@ -273,6 +294,8 @@ class _MyAppState extends State<MyApp> {
 
   @override
   void dispose() {
+    _iosNetworkModel?.removeListener(_onIosNetworkStateChanged);
+    _iosNetworkModel = null;
     _listener?.dispose();
     super.dispose();
   }
@@ -281,6 +304,35 @@ class _MyAppState extends State<MyApp> {
   void _onAndroidAppInactive() async {
     debugPrint("_onAppLifecycleInactive");
     await SiprixVoipSdk().syncCallsState(context.read<AppCallsModel>());
+  }
+
+  /// Re-register SIP accounts after idle so the next incoming INVITE can be routed (iOS).
+  void _onIosAppResume() {
+    if (!mounted) return;
+    context
+        .read<AppAccountsModel>()
+        .refreshRegistrationForWake(reason: 'ios_app_resume')
+        .then((_) {
+      debugPrint('[Lifecycle] SIP registration refreshed on resume (iOS)');
+    }).catchError((Object e, StackTrace st) {
+      debugPrint('[Lifecycle] refreshRegistration on resume failed: $e\n$st');
+    });
+  }
+
+  void _onIosNetworkStateChanged() {
+    if (!Platform.isIOS || !mounted) return;
+    final network = _iosNetworkModel;
+    if (network == null) return;
+    final bool isNowLost = network.networkLost;
+    if (_lastIosNetworkLost && !isNowLost) {
+      context
+          .read<AppAccountsModel>()
+          .refreshRegistrationForWake(reason: 'ios_network_regain')
+          .catchError((Object e, StackTrace st) {
+        debugPrint('[Lifecycle] refreshRegistration on network regain failed: $e\n$st');
+      });
+    }
+    _lastIosNetworkLost = isNowLost;
   }
 
   @override
@@ -304,57 +356,7 @@ class _MyAppState extends State<MyApp> {
   }
 
   static Future<void> _initializeSiprix([LogsModel? logsModel]) async {
-    debugPrint('Initialize siprix');
-    InitData iniData = InitData();
-    iniData.logLevelFile = LogLevel.debug;
-    iniData.logLevelIde = LogLevel.info;
-
-    //- Put here license key after purchase, for trial evaluation key is not required -//
-    iniData.license  = "LicensedTo[DeepFoodsInc]_Platforms[WIN_ANDR_IOS_OSX_LIN]_Features[V_MC_MA_MSG]_SupportTill[20260718]_UpdatesTill[20260718]_Key[MC0CFEJxwm005R6H9wtzpH3irCTyGx3rAhUAwjVi3+UwgFgmA1YtHkRqjH85NuA=]";
-
-    //- Uncomment if required -//
-    //iniData.enableVUmeter = true;
-    //iniData.singleCallMode = false;
-    //iniData.tlsVerifyServer = false;
-    if(Platform.isIOS) {
-      iniData.enableCallKit = true;
-      // Siprix iOS: when enablePushKit is true, CallKit incoming UI is only shown from a *VoIP push*
-      // (onPushIncoming). Plain SIP INVITE does NOT call reportNewIncomingCall — so you get
-      // onIncomingSip in Dart but no lock-screen CallKit / no ring unless the server sends Apple
-      // VoIP push for every call. Set false to show CallKit from the INVITE itself (SIP must
-      // reach the app while registered). Set true again when your PBX sends PushKit before/during ring.
-      // Use SIP-driven CallKit for reliable lock-screen answer flow.
-      // Set true only when server sends proper iOS VoIP pushes for each call.
-      iniData.enablePushKit = kIosUsePushKit;
-      iniData.unregOnDestroy = false;
-      debugPrint('[PushKit] iOS init: enablePushKit=${iniData.enablePushKit} enableCallKit=${iniData.enableCallKit}');
-    }
-    if(Platform.isAndroid) {
-      iniData.listenTelState = true;
-      iniData.listenVolChange = true;
-      //  iniData.serviceClassName = "com.app.teamlocus_sip.MyNotifService";
-    }
-    await SiprixVoipSdk().initialize(iniData, logsModel);
-    if (Platform.isIOS && kIosUsePushKit) {
-      try {
-        final token = await SiprixVoipSdk().getPushKitToken();
-        debugPrint('[PushKit] Connected/initialized. token: ${token ?? "null"}');
-        print('[PushKit] Connected/initialized. token: ${token ?? "null"}');
-      } catch (e) {
-        debugPrint('[PushKit] Initialized, but token fetch failed: $e');
-        print('[PushKit] Initialized, but token fetch failed: $e');
-      }
-    }
-
-    //Set video params (if required)
-    //VideoData vdoData = VideoData();
-    //vdoData.noCameraImgPath = await MyApp.writeAssetAndGetFilePath("noCamera.jpg");
-    //vdoData.bitrateKbps = 800;
-    //SiprixVoipSdk().setVideoParams(vdoData);
-
-    //Check the version
-    //String? version = await SiprixVoipSdk().version();
-    //debugPrint("Siprix version: $version");
+    await initializeSiprixApp(logs: logsModel);
   }
 
   Future<void> _readSavedState() async {
